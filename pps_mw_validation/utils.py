@@ -179,8 +179,7 @@ def get_stats(
     bin_size = np.diff(edges)
     pdf = counts / bin_size / np.sum(counts)
     dist = np.cumsum(pdf * bin_size)
-    _, idxs = np.unique(dist, return_index=True)
-    y = np.interp([0.25, 0.5, 0.75], dist[idxs], center[idxs])
+    y = np.interp([0.25, 0.5, 0.75], dist, center)
     return xr.Dataset(
         data_vars={
             "pdf": ("x", pdf),
