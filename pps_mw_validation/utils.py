@@ -1,13 +1,19 @@
 from dataclasses import dataclass
 from math import nan
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 import datetime as dt
 
 import numpy as np  # type: ignore
 import xarray as xr  # type: ignore
 
-from .data_model import LandWaterMask
+from .data_model import (
+    BoundingBox,
+    CloudnetSite,
+    LandWaterMask,
+    Location,
+    RegionOfInterest,
+)
 
 
 INCIDENCE_ANGLE = 51.
@@ -19,6 +25,10 @@ N0_STAR_K = 5.65 * 1e14
 N0_STAR_L = -2.57
 
 FILL_VALUE = {"iwc": 0.}
+
+SITE_TYPE = Dict[CloudnetSite, Location]
+ROI_TYPE = Dict[RegionOfInterest, BoundingBox]
+TARGET_TYPE = Union[SITE_TYPE, ROI_TYPE]
 
 
 @dataclass
@@ -38,12 +48,64 @@ class DatasetLoader:
         self,
         datafile: Path,
         time_idx: Optional[int] = None,
+        group: Optional[str] = None,
     ) -> xr.Dataset:
         """Get data."""
-        data = load_netcdf_data(datafile)
+        data = load_netcdf_data(datafile, group=group)
         if time_idx is not None:
             data = data.isel(time=time_idx, drop=True)
         return data
+
+    @staticmethod
+    def get_hits_by_site(
+        geoloc: xr.Dataset,
+        location: SITE_TYPE,
+        max_distance: float,
+    ) -> Dict[CloudnetSite, np.ndarray]:
+        """Get hits by site."""
+        return {
+            loc: coords.is_inside(geoloc, max_distance)
+            for loc, coords in location.items()
+        }
+
+    @staticmethod
+    def get_hits_by_roi(
+        geoloc: xr.Dataset,
+        roi: ROI_TYPE,
+    ) -> Dict[RegionOfInterest, np.ndarray]:
+        """Get hits by roi."""
+        return {roi: bbox.is_inside(geoloc) for roi, bbox in roi.items()}
+
+    def get_hits(
+        self,
+        geoloc: xr.Dataset,
+        target: TARGET_TYPE,
+        max_distance: Optional[float] = None,
+    ) -> Dict[Any, np.ndarray]:
+        """Get hits."""
+        if isinstance(list(target.keys())[0], CloudnetSite):
+            assert max_distance is not None
+            location = cast(SITE_TYPE, target)
+            return self.get_hits_by_site(geoloc, location, max_distance)
+        roi = cast(ROI_TYPE, target)
+        return self.get_hits_by_roi(geoloc, roi)
+
+    @staticmethod
+    def get_counts(
+        data: xr.DataArray,
+        edges: np.ndarray,
+    ) -> xr.DataArray:
+        """Get counts."""
+        offset = (edges[0] + edges[1]) / 2
+        counts, _ = np.histogram(data.values + offset, edges)
+        return xr.DataArray(
+            counts,
+            dims="bin",
+            coords={
+                "lower": ("bin", edges[0:-1]),
+                "upper": ("bin", edges[1::]),
+            },
+        )
 
 
 def get_files(
@@ -67,9 +129,10 @@ def get_files(
 def load_netcdf_data(
     netcdf_file: Path,
     fill_values: Optional[Dict[str, float]] = None,
+    group: Optional[str] = None,
 ) -> xr.Dataset:
     """Load Cloudnet dataset."""
-    with xr.open_dataset(netcdf_file) as ds:
+    with xr.open_dataset(netcdf_file, group=group) as ds:
         if fill_values is not None:
             for param, fill_value in fill_values.items():
                 if param in ds:
@@ -169,15 +232,13 @@ def get_cloud_ice_prop(
 
 
 def get_stats(
-    data: xr.DataArray,
-    edges: np.ndarray,
-    min_value: float,
+    data: xr.Dataset,
 ) -> xr.Dataset:
     """Get pdf and distribution."""
-    counts, _ = np.histogram(data.values + min_value, edges)
-    center = (edges[0:-1] + edges[1::]) / 2.
-    bin_size = np.diff(edges)
-    pdf = counts / bin_size / np.sum(counts)
+    center = (data.lower + data.upper).values / 2.
+    bin_size = (data.upper - data.lower).values
+    count = data.ice_water_path_count.values
+    pdf = count / bin_size / np.sum(count)
     dist = np.cumsum(pdf * bin_size)
     y = np.interp([0.25, 0.5, 0.75], dist, center)
     return xr.Dataset(

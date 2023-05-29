@@ -15,6 +15,7 @@ from .data_model import (
 from .distance import get_distance
 from .utils import (
     DatasetLoader,
+    data_array_to_netcdf,
     get_cloud_ice_prop,
     get_tilted_data,
     set_non_finites,
@@ -46,6 +47,7 @@ class DardarLoader(DatasetLoader):
         start: dt.date,
         end: dt.date,
         region_of_interest: Dict[RegionOfInterest, BoundingBox],
+        edges: np.ndarray,
         outdir: Path,
     ) -> None:
         """Collect stats within given period."""
@@ -53,12 +55,17 @@ class DardarLoader(DatasetLoader):
             for roi, bbox in region_of_interest.items():
                 stats = self.get_stats_by_date_and_bounding_box(start, bbox)
                 if stats is not None:
+                    counts = self.get_counts(stats.ice_water_path, edges)
                     outfile = outdir / OUTFILE.format(
                         dataset=DatasetType.DARDAR.name,
                         date=start.isoformat(),
                         roi=roi.value,
                     )
-                    stats.to_netcdf(outfile)
+                    data_array_to_netcdf(
+                        counts,
+                        "ice_water_path_count",
+                        outfile,
+                    )
             start += dt.timedelta(days=1)
 
     def get_stats_by_date_and_bounding_box(

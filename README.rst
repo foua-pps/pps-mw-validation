@@ -25,9 +25,9 @@ not directly available and the *pps-mw-validation* package
 contains tool that can be used to "resample" reference
 data to make the data comparable to that of ICI.
 
-The *pps-mw-validation* package is under development, EPS-SG data
+The *pps-mw-validation* package is under development, actual EPS-SG data
 are not yet available, and the package currently only handles the
-manipulation and comparisons of reference data.
+manipulation and comparisons of test and reference data.
 
 Reference data
 ..............
@@ -42,6 +42,8 @@ package includes:
     and the CALIPSO lidar measurments,
 
   * `PPS CMIC`_ data: cloud microphysics data derived from AVHRR, VIIRS, and MODIS.
+
+  * `MWI-ICI L2`_ test data: ice water path data retrieved from simulated level1b data.
 
 
 Comparison methods
@@ -66,6 +68,7 @@ Two type of comparison/validation methods are handled:
 .. _ACTRIS Cloudnet: https://cloudnet.fmi.fi/
 .. _DARDAR: https://www.icare.univ-lille.fr/dardar/
 .. _PPS CMIC: http://nwcsaf.smhi.se/
+.. _`MWI-ICI L2: https://www.eumetsat.int/new-version-eps-sg-mwi-ici-l2-test-data
 
 
 Quickstart
@@ -163,8 +166,8 @@ collect
 
   positional arguments:
     {site,roi}
-      site      Extract CMIC data around given Cloudnet radar station.
-      roi       Extract CMIC or DARDAR stats within given region of interest.
+      site      Extract CMIC or ICI data around given Cloudnet radar station.
+      roi       Extract CMIC, DARDAR, or ICI stats within given region of interest.
 
   optional arguments:
     -h, --help  show this help message and exit
@@ -181,11 +184,11 @@ compare
 
   positional arguments:
     {validate-by-region,cloudnet-distribution,time-series,validate-by-site}
-      validate-by-region  Compare CMIC and DARDAR IWP distributions.
+      validate-by-region  Compare CMIC or ICI data to DARDAR IWP distributions.
       cloudnet-distribution
                           Show CLOUDNET IWP distribution.
-      time-series         Show time series of CLOUDNET and CMIC IWP data.
-      validate-by-site    Compare CLOUDNET and CMIC IWP data.
+      time-series         Show time series of CMIC or ICI and CLOUDNET IWP data..
+      validate-by-site    Compare CMIC or ICI to CLOUDNET IWP data.
 
   options:
     -h, --help            show this help message and exit

@@ -14,11 +14,20 @@ import xarray as xr  # type: ignore
 
 from pps_mw_validation.cloudnet import CloudnetSite
 from pps_mw_validation.data_model import DatasetType, RegionOfInterest
-from pps_mw_validation.utils import load_netcdf_data, get_files, get_stats
+from pps_mw_validation.utils import (
+    DatasetLoader, load_netcdf_data, get_files, get_stats,
+)
+
 
 CLOUDNET_PATH = Path(os.environ.get("CLOUDNET_RESAMPLED_PATH", os.getcwd()))
-CMIC_PATH = Path(os.environ.get("CMIC_PATH", os.getcwd()))
 DARDAR_PATH = Path(os.environ.get("DARDAR_RESAMPLED_PATH", os.getcwd()))
+CMIC_PATH = Path(os.environ.get("CMIC_PATH", os.getcwd()))
+ICI_PATH = Path(os.environ.get("ICI_STAT_PATH", os.getcwd()))
+DATASET_PATH = {
+    DatasetType.CMIC: CMIC_PATH,
+    DatasetType.DARDAR: DARDAR_PATH,
+    DatasetType.IWP_ICI: ICI_PATH,
+}
 PLATFORMS = ["noaa20", "npp"]
 DATE_FORMAT = mdates.DateFormatter('%Y-%m-%d')
 COLORS = [f"C{i}" for i in range(10)] + list(colors._colors_full_map.values())
@@ -48,16 +57,17 @@ ACCURACY = {   # [kg/m2]
 }
 
 
-def load_cmic_data(
+def load_dataset(
+    dataset: DatasetType,
     start: dt.date,
     end: dt.date,
     sites: List[CloudnetSite] = list(CloudnetSite),
 ) -> Dict[CloudnetSite, xr.DataArray]:
-    """Load cmic data."""
+    """Load dataset data."""
     data: Dict[CloudnetSite, xr.DataArray] = {}
     for site in sites:
         files = get_files(
-            CMIC_PATH,
+            DATASET_PATH[dataset],
             f"*{site.lower_case_name}*",
             (start, end, "%Y%m%d")
         )
@@ -69,7 +79,7 @@ def load_cmic_data(
             if ~np.isnan(iwp):
                 times.append(np.datetime64(data_by_site.attrs["time"]))
                 iwps.append(iwp)
-            idxs = np.argsort(times)
+        idxs = np.argsort(times)
         data[site] = xr.DataArray(
             [iwps[idx] for idx in idxs],
             dims="time",
@@ -99,53 +109,24 @@ def load_cloudnet_data(
     return data
 
 
-def load_dardar_distribution(
+def load_dataset_distribution(
+    dataset_type: DatasetType,
     start: dt.date,
     end: dt.date,
     edges: np.ndarray,
     rois: List[RegionOfInterest] = list(RegionOfInterest),
 ) -> Dict[RegionOfInterest, xr.Dataset]:
-    """Load dardar data."""
+    """Load dataset distribution data."""
     data: Dict[RegionOfInterest, xr.DataArray] = {}
     for roi in rois:
         files = get_files(
-            DARDAR_PATH,
-            f"*{DatasetType.DARDAR.name}*{roi.value}*",
+            DATASET_PATH[dataset_type],
+            f"*{dataset_type.name}*{roi.value}*",
             (start, end, "%Y-%m-%d")
         )
         if len(files) > 0:
-            dataset = xr.concat(
-                [load_netcdf_data(f) for f in files],
-                dim="time",
-            )
-            data[roi] = get_stats(
-                dataset.ice_water_path, edges, 2 * MIN_IWP,
-            )
-    return data
-
-
-def load_cmic_distribution(
-    start: dt.date,
-    end: dt.date,
-    edges: np.ndarray,
-    rois: List[RegionOfInterest] = list(RegionOfInterest),
-) -> Dict[RegionOfInterest, xr.Dataset]:
-    """Load dardar data."""
-    data: Dict[RegionOfInterest, xr.DataArray] = {}
-    for roi in rois:
-        files = get_files(
-            CMIC_PATH,
-            f"*{DatasetType.CMIC.name}*{roi.value}*",
-            (start, end, "%Y-%m-%d")
-        )
-        if len(files) > 0:
-            dataset = xr.concat(
-                [load_netcdf_data(f) for f in files],
-                dim="time",
-            )
-            data[roi] = get_stats(
-                dataset.ice_water_path, edges, 2 * MIN_IWP,
-            )
+            dataset = sum([load_netcdf_data(f) for f in files])
+            data[roi] = get_stats(dataset)
     return data
 
 
@@ -210,7 +191,11 @@ def show_cloudnet_distribution(
     fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
     offset = 0.01
     for idx, (site, data_by_site) in enumerate(data.items()):
-        stats = get_stats(data_by_site.ice_water_path, edges, MIN_IWP * 2)
+        counts = DatasetLoader.get_counts(
+            data_by_site.ice_water_path,
+            edges,
+        )
+        stats = get_stats(counts.to_dataset(name="ice_water_path_count"))
         axs[0].loglog(stats.x, stats.pdf, '-', color=COLORS[idx])
         axs[0].grid(True)
         axs[0].set_xlim([MIN_IWP * 5, MAX_IWP])
@@ -230,13 +215,14 @@ def show_cloudnet_distribution(
 
 
 def validate_by_region(
+    dataset: DatasetType,
     start: dt.date,
     end: dt.date,
 ) -> None:
-    """Comare dardar and cmic distribution."""
+    """Compare CMIC or ICI to DARDAR IWP distribution."""
     edges = np.logspace(np.log10(MIN_IWP), np.log10(MAX_IWP), N_BINS)
-    dardar = load_dardar_distribution(start, end, edges)
-    cmic = load_cmic_distribution(start, end, edges)
+    dardar = load_dataset_distribution(DatasetType.DARDAR, start, end, edges)
+    cmic = load_dataset_distribution(dataset, start, end, edges)
     fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
     for idx, (roi, stats) in enumerate(dardar.items()):
         color = COLORS[idx]
@@ -261,9 +247,9 @@ def validate_by_region(
             print(
                 f'{roi.name}:'
                 f' DARDAR median: {stats.attrs["median"]}'
-                f' CMIC median: {cmic[roi].attrs["median"]}'
+                f' {dataset.name} median: {cmic[roi].attrs["median"]}'
                 f' DARDAR iqr: {stats.attrs["interquartile_range"]}'
-                f' CMIC iqr: {cmic[roi].attrs["interquartile_range"]}'
+                f' {dataset.name} iqr: {cmic[roi].attrs["interquartile_range"]}'
             )
             axs[0].loglog(cmic[roi].x, cmic[roi].pdf, '--', color=color)
             axs[1].semilogx(
@@ -271,19 +257,20 @@ def validate_by_region(
                 cmic[roi].dist,
                 '--',
                 color=color,
-                label=f"CMIC: {roi.value.replace('_', ' ')}",
+                label=f"{dataset.name}: {roi.value.replace('_', ' ')}",
             )
     plt.legend()
-    plt.savefig("dardar_cmic_stat.png", bbox_inches='tight')
+    plt.savefig(f"dardar_{dataset.value}_stat.png", bbox_inches='tight')
     plt.show()
 
 
 def show_time_series(
+    dataset: DatasetType,
     start: dt.date,
     end: dt.date,
 ) -> None:
     """Show time series of cmic and cloudnet data."""
-    cmic_data = load_cmic_data(start, end)
+    cmic_data = load_dataset(dataset, start, end)
     cloudnet_data = load_cloudnet_data(start, end)
     fig = plt.figure(figsize=(18, 10))
     nrows = 3
@@ -301,7 +288,7 @@ def show_time_series(
         )
         if idx == ncols - 1:
             line_cloudnet[0].set_label("cloudnet")
-            line_cmic[0].set_label("cmic")
+            line_cmic[0].set_label(dataset.value)
             ax.legend()
         if idx % ncols == 0:
             ax.set_ylabel("IWP [kg/m2]")
@@ -314,16 +301,17 @@ def show_time_series(
         ax.set_ylim([1e-6, 10])
         ax.set_title(site.value)
         idx += 1
-    plt.savefig("cloudnet_cmic_comp.png", bbox_inches='tight')
+    plt.savefig(f"cloudnet_{dataset.value}_comp.png", bbox_inches='tight')
     plt.show()
 
 
 def validate_by_site(
+    dataset: DatasetType,
     start: dt.date,
     end: dt.date,
 ) -> None:
     """Compare cmic and cloudnet data."""
-    cmic_data = load_cmic_data(start, end)
+    cmic_data = load_dataset(dataset, start, end)
     cloudnet_data = load_cloudnet_data(start, end)
     summary: Dict[CloudnetSite, Dict[str, float]] = {}
     for site in CloudnetSite:
@@ -356,7 +344,7 @@ def validate_by_site(
         else:
             value = ACCURACY[param]["threshold"] + offset
             axs[idx].set_ylim([-value, value])
-    plt.savefig("cloudnet_cmic_validation.png", bbox_inches='tight')
+    plt.savefig(f"cloudnet_{dataset.name}_validation.png", bbox_inches='tight')
     plt.show()
 
 
@@ -366,6 +354,7 @@ def add_parser(
     description: str,
     start: dt.date = START,
     end: dt.date = END,
+    dataset: Optional[DatasetType] = None,
 ) -> None:
     """Add parser."""
     parser = subparsers.add_parser(
@@ -395,6 +384,19 @@ def add_parser(
             f" default is {end}."
         ),
     )
+    if dataset is not None:
+        parser.add_argument(
+            "-d",
+            "--dataset",
+            dest="dataset",
+            type=str,
+            help=(
+                "Dataset to use for comparison, "
+                f"default is {dataset.name}."
+            ),
+            choices=[d.name for d in [DatasetType.CMIC, DatasetType.IWP_ICI]],
+            default=dataset.name,
+        )
 
 
 def cli(args_list: List[str] = argv[1:]) -> None:
@@ -406,7 +408,8 @@ def cli(args_list: List[str] = argv[1:]) -> None:
     add_parser(
         subparsers,
         "validate-by-region",
-        "Compare CMIC and DARDAR IWP distributions.",
+        "Compare CMIC or ICI data to DARDAR IWP distributions.",
+        dataset=DatasetType.CMIC,
     )
     add_parser(
         subparsers,
@@ -416,12 +419,14 @@ def cli(args_list: List[str] = argv[1:]) -> None:
     add_parser(
         subparsers,
         "time-series",
-        "Show time series of CLOUDNET and CMIC IWP data.",
+        "Show time series of CMIC or ICI and CLOUDNET IWP data.",
+        dataset=DatasetType.CMIC,
     )
     add_parser(
         subparsers,
         "validate-by-site",
-        "Compare CLOUDNET and CMIC IWP data.",
+        "Compare CMIC or ICI to CLOUDNET IWP data.",
+        dataset=DatasetType.CMIC,
     )
     args = parser.parse_args(args_list)
     start = dt.date.fromisoformat(args.start)
@@ -429,12 +434,14 @@ def cli(args_list: List[str] = argv[1:]) -> None:
     comparison_type = args.command
     if comparison_type == "cloudnet-distribution":
         show_cloudnet_distribution(start, end)
-    elif comparison_type == "validate-by-region":
-        validate_by_region(start, end)
-    elif comparison_type == "time-series":
-        show_time_series(start, end)
-    elif comparison_type == "validate-by-site":
-        validate_by_site(start, end)
+    else:
+        dataset_type = DatasetType(args.dataset.lower())
+        if comparison_type == "validate-by-region":
+            validate_by_region(dataset_type, start, end)
+        elif comparison_type == "time-series":
+            show_time_series(dataset_type, start, end)
+        elif comparison_type == "validate-by-site":
+            validate_by_site(dataset_type, start, end)
 
 
 if __name__ == "__main__":

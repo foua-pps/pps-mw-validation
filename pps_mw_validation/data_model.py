@@ -13,6 +13,7 @@ class DatasetType(Enum):
     CLOUDNET = "cloudnet"
     CMIC = "cmic"
     DARDAR = "dardar"
+    IWP_ICI = "iwp_ici"
 
 
 class CloudnetSite(Enum):
