@@ -68,7 +68,7 @@ Two type of comparison/validation methods are handled:
 .. _ACTRIS Cloudnet: https://cloudnet.fmi.fi/
 .. _DARDAR: https://www.icare.univ-lille.fr/dardar/
 .. _PPS CMIC: http://nwcsaf.smhi.se/
-.. https://www.eumetsat.int/new-version-eps-sg-mwi-ici-l2-test-data
+.. _`MWI-ICI L2: https://www.eumetsat.int/new-version-eps-sg-mwi-ici-l2-test-data
 
 
 Quickstart
@@ -184,11 +184,11 @@ compare
 
   positional arguments:
     {validate-by-region,cloudnet-distribution,time-series,validate-by-site}
-      validate-by-region  Compare CMIC and DARDAR IWP distributions.
+      validate-by-region  Compare CMIC or ICI data to DARDAR IWP distributions.
       cloudnet-distribution
                           Show CLOUDNET IWP distribution.
-      time-series         Show time series of CLOUDNET and CMIC IWP data.
-      validate-by-site    Compare CLOUDNET and CMIC IWP data.
+      time-series         Show time series of CMIC or ICI and CLOUDNET IWP data..
+      validate-by-site    Compare CMIC or ICI to CLOUDNET IWP data.
 
   options:
     -h, --help            show this help message and exit
