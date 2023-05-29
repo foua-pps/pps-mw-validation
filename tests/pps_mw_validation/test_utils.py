@@ -85,8 +85,19 @@ def test_get_stats(
     expect: float
 ):
     """Test get stats."""
-    data = xr.DataArray([0.1, 0.2, 0.5, 0.8, 0.9])
-    edges = np.linspace(0, 1, 1000)
-    min_value = 0.
-    stats = utils.get_stats(data, edges, min_value)
+    edges = np.linspace(0, 1, 101)
+    counts, _ = np.histogram(
+        [0.1, 0.2, 0.5, 0.8, 0.9],
+        edges,
+    )
+    data = xr.Dataset(
+        data_vars={
+            "ice_water_path_count": ("bin", counts),
+        },
+        coords={
+            "lower": ("bin", edges[0:-1]),
+            "upper": ("bin", edges[1::]),
+        },
+    )
+    stats = utils.get_stats(data)
     assert stats.attrs[param] == pytest.approx(expect, abs=1e-2)

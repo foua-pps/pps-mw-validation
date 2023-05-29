@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, cast
+from typing import List, Optional
 import datetime as dt
 
 import numpy as np  # type: ignore
 import xarray as xr  # type: ignore
 
-from .data_model import CloudnetSite, DatasetType
+from .data_model import DatasetType
 from .utils import (
     ROI_TYPE,
     SITE_TYPE,
@@ -75,6 +75,7 @@ class CmicLoader(DatasetLoader):
         end: dt.date,
         platforms: List[str],
         region_of_interest: ROI_TYPE,
+        edges: np.ndarray,
         outdir: Path,
     ) -> None:
         """Collect stats around given period and regions of interest."""
@@ -90,13 +91,18 @@ class CmicLoader(DatasetLoader):
                         [s for s in stats if s.attrs["target"] == target],
                         dim="pos",
                     )
+                    counts = self.get_counts(stat, edges)
                     outfile = outdir / OUTFILE_WITH_DATE.format(
                         dataset=DatasetType.CMIC.name,
                         date=start.isoformat(),
                         platform=platform,
                         target=target,
                     )
-                    data_array_to_netcdf(stat, "ice_water_path", outfile)
+                    data_array_to_netcdf(
+                        counts,
+                        "ice_water_path_count",
+                        outfile,
+                    )
             start += dt.timedelta(days=1)
 
     def get_stats_by_date_and_target(
@@ -110,15 +116,7 @@ class CmicLoader(DatasetLoader):
         data: List[xr.DataArray] = []
         for cmic_file in self.get_files(date, PRODUCT_CMIC, platform):
             print(cmic_file)
-            if isinstance(list(target.keys())[0], CloudnetSite):
-                assert max_distance is not None
-                target = cast(SITE_TYPE, target)
-                data += self.get_site_stats_by_file(
-                    cmic_file, target, max_distance,
-                )
-            else:
-                target = cast(ROI_TYPE, target)
-                data += self.get_roi_stats_by_file(cmic_file, target)
+            data += self.get_stats_by_file(cmic_file, target, max_distance)
         return data
 
     def get_geoloc(
@@ -130,18 +128,19 @@ class CmicLoader(DatasetLoader):
             Path(cmic_file.as_posix().replace(PRODUCT_CMIC, PRODUCT_CMA))
         )
 
-    def get_roi_stats_by_file(
+    def get_stats_by_file(
         self,
         cmic_file: Path,
-        roi: ROI_TYPE,
+        target: TARGET_TYPE,
+        max_distance: Optional[float] = None,
     ) -> List[xr.DataArray]:
         """Get cmic stats by file."""
         geoloc = self.get_geoloc(cmic_file)
-        hits = self.get_hits_by_roi(geoloc, roi)
+        hits = self.get_hits(geoloc, target, max_distance)
         data_arrays: List[xr.DataArray] = []
         if any([filt.any() for filt in hits.values()]):
             cmic_data = self.get_data(cmic_file)
-            for region, filt in hits.items():
+            for targ, filt in hits.items():
                 if filt.any():
                     data_array = xr.DataArray(
                         cmic_data.cmic_iwp[0].values[filt],
@@ -154,42 +153,11 @@ class CmicLoader(DatasetLoader):
                             "time": np.datetime_as_string(
                                 cmic_data.time.values[0], timezone='UTC'
                             ),
-                            "target": region.value,
+                            "target": targ.value,
                             "cmic_file": cmic_file.stem,
                         },
                     )
-                    data_arrays.append(data_array)
-        return data_arrays
-
-    def get_site_stats_by_file(
-        self,
-        cmic_file: Path,
-        location: SITE_TYPE,
-        max_distance: float,
-    ) -> List[xr.DataArray]:
-        """Get cmic stats by file."""
-        geoloc = self.get_geoloc(cmic_file)
-        hits = self.get_hits_by_site(geoloc, location, max_distance)
-        data_arrays: List[xr.DataArray] = []
-        if any([filt.any() for filt in hits.values()]):
-            cmic_data = self.get_data(cmic_file)
-            for loc, filt in hits.items():
-                if filt.any():
-                    data_array = xr.DataArray(
-                        cmic_data.cmic_iwp[0].values[filt],
-                        dims="pos",
-                        coords={
-                            "latitude": ("pos", geoloc.lat.values[filt]),
-                            "longitude": ("pos", geoloc.lon.values[filt]),
-                        },
-                        attrs={
-                            "time": np.datetime_as_string(
-                                cmic_data.time.values[0], timezone='UTC'
-                            ),
-                            "target": loc.name.lower(),
-                            "cmic_file": cmic_file.stem,
-                            "max_distance": max_distance,
-                        },
-                    )
+                    if max_distance is not None:
+                        data_array.attrs["max_distance"] = max_distance
                     data_arrays.append(data_array)
         return data_arrays

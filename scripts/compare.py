@@ -14,14 +14,18 @@ import xarray as xr  # type: ignore
 
 from pps_mw_validation.cloudnet import CloudnetSite
 from pps_mw_validation.data_model import DatasetType, RegionOfInterest
-from pps_mw_validation.utils import load_netcdf_data, get_files, get_stats
+from pps_mw_validation.utils import (
+    DatasetLoader, load_netcdf_data, get_files, get_stats,
+)
+
 
 CLOUDNET_PATH = Path(os.environ.get("CLOUDNET_RESAMPLED_PATH", os.getcwd()))
 DARDAR_PATH = Path(os.environ.get("DARDAR_RESAMPLED_PATH", os.getcwd()))
 CMIC_PATH = Path(os.environ.get("CMIC_PATH", os.getcwd()))
-ICI_PATH = Path(os.environ.get("ICI_PATH", os.getcwd()))
+ICI_PATH = Path(os.environ.get("ICI_STAT_PATH", os.getcwd()))
 DATASET_PATH = {
     DatasetType.CMIC: CMIC_PATH,
+    DatasetType.DARDAR: DARDAR_PATH,
     DatasetType.IWP_ICI: ICI_PATH,
 }
 PLATFORMS = ["noaa20", "npp"]
@@ -105,31 +109,6 @@ def load_cloudnet_data(
     return data
 
 
-def load_dardar_distribution(
-    start: dt.date,
-    end: dt.date,
-    edges: np.ndarray,
-    rois: List[RegionOfInterest] = list(RegionOfInterest),
-) -> Dict[RegionOfInterest, xr.Dataset]:
-    """Load dardar data."""
-    data: Dict[RegionOfInterest, xr.DataArray] = {}
-    for roi in rois:
-        files = get_files(
-            DARDAR_PATH,
-            f"*{DatasetType.DARDAR.name}*{roi.value}*",
-            (start, end, "%Y-%m-%d")
-        )
-        if len(files) > 0:
-            dataset = xr.concat(
-                [load_netcdf_data(f) for f in files],
-                dim="time",
-            )
-            data[roi] = get_stats(
-                dataset.ice_water_path, edges, 2 * MIN_IWP,
-            )
-    return data
-
-
 def load_dataset_distribution(
     dataset_type: DatasetType,
     start: dt.date,
@@ -146,13 +125,8 @@ def load_dataset_distribution(
             (start, end, "%Y-%m-%d")
         )
         if len(files) > 0:
-            dataset = xr.concat(
-                [load_netcdf_data(f) for f in files],
-                dim="time",
-            )
-            data[roi] = get_stats(
-                dataset.ice_water_path, edges, 2 * MIN_IWP,
-            )
+            dataset = sum([load_netcdf_data(f) for f in files])
+            data[roi] = get_stats(dataset)
     return data
 
 
@@ -217,7 +191,11 @@ def show_cloudnet_distribution(
     fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
     offset = 0.01
     for idx, (site, data_by_site) in enumerate(data.items()):
-        stats = get_stats(data_by_site.ice_water_path, edges, MIN_IWP * 2)
+        counts = DatasetLoader.get_counts(
+            data_by_site.ice_water_path,
+            edges,
+        )
+        stats = get_stats(counts.to_dataset(name="ice_water_path_count"))
         axs[0].loglog(stats.x, stats.pdf, '-', color=COLORS[idx])
         axs[0].grid(True)
         axs[0].set_xlim([MIN_IWP * 5, MAX_IWP])
@@ -241,9 +219,9 @@ def validate_by_region(
     start: dt.date,
     end: dt.date,
 ) -> None:
-    """Comare dardar and cmic distribution."""
+    """Compare CMIC or ICI to DARDAR IWP distribution."""
     edges = np.logspace(np.log10(MIN_IWP), np.log10(MAX_IWP), N_BINS)
-    dardar = load_dardar_distribution(start, end, edges)
+    dardar = load_dataset_distribution(DatasetType.DARDAR, start, end, edges)
     cmic = load_dataset_distribution(dataset, start, end, edges)
     fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
     for idx, (roi, stats) in enumerate(dardar.items()):

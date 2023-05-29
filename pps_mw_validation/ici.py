@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import List, Optional
 import datetime as dt
 import re
 
 import numpy as np  # type: ignore
 import xarray as xr  # type: ignore
 
-from .data_model import CloudnetSite, DatasetType
+from .data_model import DatasetType
 from .utils import (
     ROI_TYPE,
     SITE_TYPE,
@@ -77,6 +77,7 @@ class IwpIciLoader(DatasetLoader):
         start: dt.date,
         end: dt.date,
         region_of_interest: ROI_TYPE,
+        edges: np.ndarray,
         outdir: Path,
     ) -> None:
         """Collect stats around given period and regions of interest."""
@@ -90,12 +91,13 @@ class IwpIciLoader(DatasetLoader):
                     [s for s in stats if s.attrs["target"] == target],
                     dim="pos",
                 )
+                counts = self.get_counts(stat, edges)
                 outfile = outdir / OUTFILE_WITH_DATE.format(
                     dataset=DatasetType.IWP_ICI.name,
                     date=start.isoformat(),
                     target=target,
                 )
-                data_array_to_netcdf(stat, "ice_water_path", outfile)
+                data_array_to_netcdf(counts, "ice_water_path_count", outfile)
             start += dt.timedelta(days=1)
 
     def get_stats_by_date_and_target(
@@ -118,14 +120,7 @@ class IwpIciLoader(DatasetLoader):
     ) -> List[xr.DataArray]:
         """Get stats by file."""
         data = self.get_iwp_data(ici_file)
-        hits: Dict[Any, np.ndarray] = {}
-        if isinstance(list(target.keys())[0], CloudnetSite):
-            assert max_distance is not None
-            location = cast(SITE_TYPE, target)
-            hits = self.get_hits_by_site(data, location, max_distance)
-        else:
-            roi = cast(ROI_TYPE, target)
-            hits = self.get_hits_by_roi(data, roi)
+        hits = self.get_hits(data, target, max_distance)
         data_arrays: List[xr.DataArray] = []
         if any([filt.any() for filt in hits.values()]):
             for targ, filt in hits.items():

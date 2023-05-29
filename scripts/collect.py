@@ -6,6 +6,8 @@ import argparse
 import datetime as dt
 import os
 
+import numpy as np  # type: ignore
+
 from pps_mw_validation.cloudnet import CLOUDNET_LOCATION, CloudnetSite
 from pps_mw_validation.cmic import CmicLoader
 from pps_mw_validation.dardar import DardarLoader
@@ -38,6 +40,9 @@ PLATFORMS = ["eos1", "eos2", "metopb", "metopc", "noaa20", "npp"]
 MAX_DISTANCE = 8e3  # [m]
 START = dt.datetime.utcnow().date()
 END = START + dt.timedelta(days=1)
+MIN_IWP = 1e-6
+MAX_IWP = 10.
+N_BINS = 70
 
 
 def add_parser(
@@ -207,11 +212,12 @@ def cli(args_list: List[str] = argv[1:]) -> None:
             RegionOfInterest(r): REGION_OF_INTEREST[RegionOfInterest(r)]
             for r in args.region_of_interests
         }
+        edges = np.logspace(np.log10(MIN_IWP), np.log10(MAX_IWP), N_BINS)
         if isinstance(loader, CmicLoader):
             platforms = args.platforms
-            loader.collect_roi_stats(start, end, platforms, roi, outdir)
+            loader.collect_roi_stats(start, end, platforms, roi, edges, outdir)
         else:
-            loader.collect_roi_stats(start, end, roi, outdir)
+            loader.collect_roi_stats(start, end, roi, edges, outdir)
 
 
 if __name__ == "__main__":
