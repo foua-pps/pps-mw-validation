@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 import datetime as dt
 import re
 
@@ -107,28 +107,28 @@ class IwpIciLoader(DatasetLoader):
         """Get stats by date and location."""
         data: List[xr.DataArray] = []
         for ici_file in self.get_files(date):
-            if isinstance(list(target.keys())[0], CloudnetSite):
-                assert max_distance is not None
-                target = cast(SITE_TYPE, target)
-                data += self.get_site_stats_by_file(
-                    ici_file, target, max_distance,
-                )
-            else:
-                target = cast(ROI_TYPE, target)
-                data += self.get_roi_stats_by_file(ici_file, target)
+            data += self.get_stats_by_file(ici_file, target, max_distance)
         return data
 
-    def get_roi_stats_by_file(
+    def get_stats_by_file(
         self,
         ici_file: Path,
-        roi: ROI_TYPE,
+        target: TARGET_TYPE,
+        max_distance: Optional[float] = None,
     ) -> List[xr.DataArray]:
-        """Get roi stats by file."""
+        """Get stats by file."""
         data = self.get_iwp_data(ici_file)
-        hits = self.get_hits_by_roi(data, roi)
+        hits: Dict[Any, np.ndarray] = {}
+        if isinstance(list(target.keys())[0], CloudnetSite):
+            assert max_distance is not None
+            location = cast(SITE_TYPE, target)
+            hits = self.get_hits_by_site(data, location, max_distance)
+        else:
+            roi = cast(ROI_TYPE, target)
+            hits = self.get_hits_by_roi(data, roi)
         data_arrays: List[xr.DataArray] = []
         if any([filt.any() for filt in hits.values()]):
-            for region, filt in hits.items():
+            for targ, filt in hits.items():
                 if filt.any():
                     idxs_scan, _ = np.where(filt)
                     data_array = xr.DataArray(
@@ -143,44 +143,12 @@ class IwpIciLoader(DatasetLoader):
                                 data.time.values[idxs_scan[0]],
                                 timezone='UTC',
                             ),
-                            "target": region.value,
+                            "target": targ.name.lower(),
                             "ici_file": ici_file.stem,
                         },
                     )
-                    data_arrays.append(data_array)
-        return data_arrays
-
-    def get_site_stats_by_file(
-        self,
-        ici_file: Path,
-        location: SITE_TYPE,
-        max_distance: float,
-    ) -> List[xr.DataArray]:
-        """Get site stats by file."""
-        data = self.get_iwp_data(ici_file)
-        hits = self.get_hits_by_site(data, location, max_distance)
-        data_arrays: List[xr.DataArray] = []
-        if any([filt.any() for filt in hits.values()]):
-            for loc, filt in hits.items():
-                if filt.any():
-                    idxs_scan, _ = np.where(filt)
-                    data_array = xr.DataArray(
-                        data.ice_water_path.values[filt],
-                        dims="pos",
-                        coords={
-                            "latitude": ("pos", data.lat.values[filt]),
-                            "longitude": ("pos", data.lon.values[filt]),
-                        },
-                        attrs={
-                            "time": np.datetime_as_string(
-                                data.time.values[idxs_scan[0]],
-                                timezone='UTC'
-                            ),
-                            "target": loc.name.lower(),
-                            "ici_file": ici_file.stem,
-                            "max_distance": max_distance,
-                        },
-                    )
+                    if max_distance is not None:
+                        data_array.attrs["max_distance"] = max_distance
                     data_arrays.append(data_array)
         return data_arrays
 
