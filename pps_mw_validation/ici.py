@@ -104,7 +104,7 @@ class IwpIciLoader(DatasetLoader):
         target: TARGET_TYPE,
         max_distance: Optional[float] = None,
     ) -> List[xr.DataArray]:
-        """Get stats by date and location."""
+        """Get stats by date and target."""
         data: List[xr.DataArray] = []
         for ici_file in self.get_files(date):
             data += self.get_stats_by_file(ici_file, target, max_distance)
