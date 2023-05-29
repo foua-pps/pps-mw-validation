@@ -1,28 +1,25 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Union, cast
+from typing import List, Optional, cast
 import datetime as dt
 
 import numpy as np  # type: ignore
 import xarray as xr  # type: ignore
 
-from .data_model import (
-    BoundingBox,
-    CloudnetSite,
-    DatasetType,
-    Location,
-    RegionOfInterest,
+from .data_model import CloudnetSite, DatasetType
+from .utils import (
+    ROI_TYPE,
+    SITE_TYPE,
+    TARGET_TYPE,
+    DatasetLoader,
+    data_array_to_netcdf
 )
-from .utils import DatasetLoader, data_array_to_netcdf
 
 
 PRODUCT_CMA = "_CMA_"
 PRODUCT_CMIC = "_CMIC_"
 OUTFILE = "{orig_file}_{target}.nc"
 OUTFILE_WITH_DATE = "{dataset}_{date}_{platform}_{target}.nc"
-SITE_TYPE = Dict[CloudnetSite, Location]
-ROI_TYPE = Dict[RegionOfInterest, BoundingBox]
-TARGET_TYPE = Union[SITE_TYPE, ROI_TYPE]
 
 
 @dataclass
@@ -132,26 +129,6 @@ class CmicLoader(DatasetLoader):
         return self.get_data(
             Path(cmic_file.as_posix().replace(PRODUCT_CMIC, PRODUCT_CMA))
         )
-
-    @staticmethod
-    def get_hits_by_site(
-        geoloc: xr.Dataset,
-        location: SITE_TYPE,
-        max_distance: float,
-    ) -> Dict[CloudnetSite, np.ndarray]:
-        """Get hits."""
-        return {
-            loc: coords.is_inside(geoloc, max_distance)
-            for loc, coords in location.items()
-        }
-
-    @staticmethod
-    def get_hits_by_roi(
-        geoloc: xr.Dataset,
-        roi: ROI_TYPE,
-    ) -> Dict[RegionOfInterest, np.ndarray]:
-        """Get hits."""
-        return {roi: bbox.is_inside(geoloc) for roi, bbox in roi.items()}
 
     def get_roi_stats_by_file(
         self,

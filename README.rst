@@ -25,9 +25,9 @@ not directly available and the *pps-mw-validation* package
 contains tool that can be used to "resample" reference
 data to make the data comparable to that of ICI.
 
-The *pps-mw-validation* package is under development, EPS-SG data
+The *pps-mw-validation* package is under development, actual EPS-SG data
 are not yet available, and the package currently only handles the
-manipulation and comparisons of reference data.
+manipulation and comparisons of test and reference data.
 
 Reference data
 ..............
@@ -42,6 +42,8 @@ package includes:
     and the CALIPSO lidar measurments,
 
   * `PPS CMIC`_ data: cloud microphysics data derived from AVHRR, VIIRS, and MODIS.
+
+  * `MWI-ICI L2`_ test data: ice water path data retrieved from simulated level1b data.
 
 
 Comparison methods
@@ -66,6 +68,7 @@ Two type of comparison/validation methods are handled:
 .. _ACTRIS Cloudnet: https://cloudnet.fmi.fi/
 .. _DARDAR: https://www.icare.univ-lille.fr/dardar/
 .. _PPS CMIC: http://nwcsaf.smhi.se/
+.. https://www.eumetsat.int/new-version-eps-sg-mwi-ici-l2-test-data
 
 
 Quickstart
@@ -163,8 +166,8 @@ collect
 
   positional arguments:
     {site,roi}
-      site      Extract CMIC data around given Cloudnet radar station.
-      roi       Extract CMIC or DARDAR stats within given region of interest.
+      site      Extract CMIC or ICI data around given Cloudnet radar station.
+      roi       Extract CMIC, DARDAR, or ICI stats within given region of interest.
 
   optional arguments:
     -h, --help  show this help message and exit

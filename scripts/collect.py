@@ -9,6 +9,7 @@ import os
 from pps_mw_validation.cloudnet import CLOUDNET_LOCATION, CloudnetSite
 from pps_mw_validation.cmic import CmicLoader
 from pps_mw_validation.dardar import DardarLoader
+from pps_mw_validation.ici import IwpIciLoader
 from pps_mw_validation.data_model import (
     REGION_OF_INTEREST, RegionOfInterest, DatasetType,
 )
@@ -16,8 +17,10 @@ from pps_mw_validation.data_model import (
 
 OUTDIR = Path(os.environ.get("PPSMW_OUTDIR_PATH", os.getcwd()))
 DARDAR_PATH = Path(os.environ.get("DARDAR_RESAMPLED_PATH", os.getcwd()))
+ICI_PATH = Path(os.environ.get("ICI_PATH", os.getcwd()))
 CMIC_PATH = Path("/data/lang/satellit2/polar/pps")
-DATASET_LOADER: Dict[DatasetType, Union[CmicLoader, DardarLoader]] = {
+LOADER_TYPE = Union[CmicLoader, DardarLoader, IwpIciLoader]
+DATASET_LOADER: Dict[DatasetType, LOADER_TYPE] = {
     DatasetType.CMIC: CmicLoader(
         base_path=CMIC_PATH,
         file_pattern="*{product}*{platform}*",
@@ -25,6 +28,10 @@ DATASET_LOADER: Dict[DatasetType, Union[CmicLoader, DardarLoader]] = {
     DatasetType.DARDAR: DardarLoader(
         base_path=DARDAR_PATH,
         file_pattern="DARDAR-CLOUD_{year}{doy}*_resampled.nc",
+    ),
+    DatasetType.IWP_ICI: IwpIciLoader(
+        base_path=ICI_PATH,
+        file_pattern="W_XX-EUMETSAT-Darmstadt,SAT,SGB1-MSP-02-LIW_C_EUMT_(?P<created>\d+)_G_D_(?P<start>\d+)_(?P<end>\d+)_",  # noqa
     ),
 }
 PLATFORMS = ["eos1", "eos2", "metopb", "metopc", "noaa20", "npp"]
@@ -40,6 +47,7 @@ def add_parser(
     start: dt.date,
     end: dt.date,
     outdir: Path,
+    datasets: List[DatasetType] = [d for d in DATASET_LOADER],
     location: Optional[CloudnetSite] = None,
     max_distance: Optional[float] = None,
     roi: Optional[RegionOfInterest] = None,
@@ -135,7 +143,7 @@ def add_parser(
                 "Dataset from which to extract data, "
                 f"default is {dataset.name}."
             ),
-            choices=[d.name for d in DATASET_LOADER],
+            choices=[d.name for d in datasets],
             default=dataset.name,
         )
 
@@ -151,10 +159,12 @@ def cli(args_list: List[str] = argv[1:]) -> None:
     add_parser(
         subparsers,
         "site",
-        "Extract CMIC data around given Cloudnet radar station.",
+        "Extract data around given Cloudnet radar station.",
         location=CloudnetSite.NORUNDA,
         start=START,
         end=END,
+        dataset=DatasetType.CMIC,
+        datasets=[DatasetType.CMIC, DatasetType.IWP_ICI],
         max_distance=MAX_DISTANCE,
         outdir=OUTDIR,
         platform="noaa20",
@@ -183,10 +193,15 @@ def cli(args_list: List[str] = argv[1:]) -> None:
             CloudnetSite(loc): CLOUDNET_LOCATION[CloudnetSite(loc)]
             for loc in args.locations
         }
-        assert isinstance(loader, CmicLoader)
-        loader.collect_site_stats(
-            start, end, platforms, location, max_distance, outdir,
-        )
+        if isinstance(loader, CmicLoader):
+            platforms = args.platforms
+            loader.collect_site_stats(
+                start, end, platforms, location, max_distance, outdir,
+            )
+        elif isinstance(loader, IwpIciLoader):
+            loader.collect_site_stats(
+                start, end, location, max_distance, outdir,
+            )
     elif args.command == "roi":
         roi = {
             RegionOfInterest(r): REGION_OF_INTEREST[RegionOfInterest(r)]
