@@ -4,30 +4,28 @@ pps-mw-validation
 --------------------------------------
  a tool for validating pps-mw products
 --------------------------------------
-:Author: Bengt Rydberg
-:Version: $Revision: 0001 $
 
-This is *pps-mw-validation* Python package toolbox.
-The *pps-mw-validation* package is supposed to contain
-tools that are useful for validating the *pps-mw*
-products that the NWCSAF_ will generate based on
-data from the passive microwave sensors of the
-EUMETSAT Polar System-Second Generation or EPS-SG_
-mission.
+This is *pps-mw-validation* Python package toolbox. The
+*pps-mw-validation* package is supposed to contain tools
+that are useful for validating the *pps-mw* products that
+the NWCSAF_ will generate based on data from the passive
+microwave sensors of the EUMETSAT Polar System-Second
+Generation or EPS-SG_ mission.
 
 The set of *pps-mw* products will include cloud and
-precipitation products, e.g. ice water path (IWP) from
-the EPS-SG Ice cloud Imager (ICI). 
-ICI is a conical scanner with a footprint size of about
-16 km and with an incidence angle of about 51°.
-Reference data with this type of characteristics are
-not directly available and the *pps-mw-validation* package
-contains tool that can be used to "resample" reference
-data to make the data comparable to that of ICI.
+precipitation products, e.g. ice water path (IWP) from the
+EPS-SG Ice cloud Imager (ICI). ICI is a conical scanner
+with a footprint size of about 16 km and with an incidence
+angle of about 51°. Reference data with this type of
+characteristics are not directly available and the
+*pps-mw-validation* package contains tool that can be used
+to "resample" reference data to make the data comparable to
+that of ICI. 
 
-The *pps-mw-validation* package is under development, actual EPS-SG data
-are not yet available, and the package currently only handles the
-manipulation and comparisons of test and reference data.
+The *pps-mw-validation* package is under development, actual
+EPS-SG data are not yet available, and the package currently
+only handles the manipulation and comparisons of test and
+reference data.
 
 Reference data
 ..............
@@ -35,15 +33,17 @@ Reference data
 The reference data products handled by the *pps-mw-validation*
 package includes:
 
-  * `ACTRIS Cloudnet`_ data: ground-based cloud profiling radar data from 13
-    European sites,
+  * `ACTRIS Cloudnet`_ data: ground-based cloud profiling radar
+    data from 13 European sites,
 
-  * DARDAR_ data: cloud properties retrieved from combining the CloudSat radar
-    and the CALIPSO lidar measurments,
+  * DARDAR_ data: cloud properties retrieved from combining the
+    CloudSat radar and the CALIPSO lidar measurments,
 
-  * `PPS CMIC`_ data: cloud microphysics data derived from AVHRR, VIIRS, and MODIS.
+  * `PPS CMIC`_ data: cloud microphysics data derived from AVHRR
+    (Metop), VIIRS (JPSS), and MODIS (EOS),
 
-  * `MWI-ICI L2`_ test data: ice water path data retrieved from simulated level1b data.
+  * `MWI-ICI L2`_ test data: ice water path data retrieved from
+    simulated ICI level1b data.
 
 
 Comparison methods
@@ -68,7 +68,7 @@ Two type of comparison/validation methods are handled:
 .. _ACTRIS Cloudnet: https://cloudnet.fmi.fi/
 .. _DARDAR: https://www.icare.univ-lille.fr/dardar/
 .. _PPS CMIC: http://nwcsaf.smhi.se/
-.. _`MWI-ICI L2: https://www.eumetsat.int/new-version-eps-sg-mwi-ici-l2-test-data
+.. _MWI-ICI L2: https://www.eumetsat.int/new-version-eps-sg-mwi-ici-l2-test-data
 
 
 Quickstart
@@ -115,22 +115,22 @@ The usage of these scripts are described later in this section,
 but the workflow will depend a bit on what type of comparison type
 that is of interset, and these workflows are first described.
 
-Direct comparison of ACTRIS Cloudnet and CMIC data 
-..................................................
+Direct comparison of CMIC or ICI to ACTRIS Cloudnet IWP data 
+............................................................
 
 Workflow:
 
   1. resample: *ACTRIS Cloudnet* data
-  2. collect: *CMIC* data around *ACTRIS Cloudnet* sites
+  2. collect: *CMIC* or *ICI* data around *ACTRIS Cloudnet* sites
   3. compare: run the *validate-by-site* method
 
-Statistical comparison of CMIC and DARDAR data
-..............................................
+Statistical comparison of CMIC or ICI to DARDAR IWP data
+........................................................
 
 Workflow:
 
   1. resample: *DARDAR* data
-  2. collect: *CMIC* and *DARDAR* data within region of interest
+  2. collect: *CMIC* or *ICI* and *DARDAR* data within region of interest
   3. compare: run the *validate-by-region* method
 
 The *resample* and *collect* scripts will save the processed
