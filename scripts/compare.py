@@ -1,33 +1,26 @@
 #!/usr/bin/env python
-from pathlib import Path
 from sys import argv
 from typing import Dict, List, Optional
 import argparse
 import datetime as dt
-import os
+import json
 
 import matplotlib.colors as colors  # type: ignore
 import matplotlib.dates as mdates  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 import numpy as np  # type: ignore
-import xarray as xr  # type: ignore
 
 from pps_mw_validation.cloudnet import CloudnetSite
-from pps_mw_validation.data_model import DatasetType, RegionOfInterest
-from pps_mw_validation.utils import (
-    DatasetLoader, load_netcdf_data, get_files, get_stats,
+from pps_mw_validation.comparison import (
+    compare,
+    load_cloudnet_data,
+    load_dataset,
+    load_dataset_distribution,
 )
+from pps_mw_validation.data_model import DatasetType
+from pps_mw_validation.utils import DatasetLoader, get_stats
 
 
-CLOUDNET_PATH = Path(os.environ.get("CLOUDNET_RESAMPLED_PATH", os.getcwd()))
-DARDAR_PATH = Path(os.environ.get("DARDAR_RESAMPLED_PATH", os.getcwd()))
-CMIC_PATH = Path(os.environ.get("CMIC_PATH", os.getcwd()))
-ICI_PATH = Path(os.environ.get("ICI_STAT_PATH", os.getcwd()))
-DATASET_PATH = {
-    DatasetType.CMIC: CMIC_PATH,
-    DatasetType.DARDAR: DARDAR_PATH,
-    DatasetType.IWP_ICI: ICI_PATH,
-}
 PLATFORMS = ["noaa20", "npp"]
 DATE_FORMAT = mdates.DateFormatter('%Y-%m-%d')
 COLORS = [f"C{i}" for i in range(10)] + list(colors._colors_full_map.values())
@@ -55,130 +48,6 @@ ACCURACY = {   # [kg/m2]
         "optimum": 0.04,
     },
 }
-
-
-def load_dataset(
-    dataset: DatasetType,
-    start: dt.date,
-    end: dt.date,
-    sites: List[CloudnetSite] = list(CloudnetSite),
-) -> Dict[CloudnetSite, xr.DataArray]:
-    """Load dataset data."""
-    data: Dict[CloudnetSite, xr.DataArray] = {}
-    for site in sites:
-        files = get_files(
-            DATASET_PATH[dataset],
-            f"*{site.lower_case_name}*",
-            (start, end, "%Y%m%d")
-        )
-        times = []
-        iwps = []
-        for f in files:
-            data_by_site = load_netcdf_data(f)
-            iwp = np.nanmean(data_by_site.ice_water_path)
-            if ~np.isnan(iwp):
-                times.append(np.datetime64(data_by_site.attrs["time"]))
-                iwps.append(iwp)
-        idxs = np.argsort(times)
-        data[site] = xr.DataArray(
-            [iwps[idx] for idx in idxs],
-            dims="time",
-            coords={"time": ("time", [times[idx] for idx in idxs])},
-        )
-    return data
-
-
-def load_cloudnet_data(
-    start: dt.date,
-    end: dt.date,
-    sites: List[CloudnetSite] = list(CloudnetSite),
-) -> Dict[CloudnetSite, xr.Dataset]:
-    """Load cloudnet data."""
-    data: Dict[CloudnetSite, xr.Dataset] = {}
-    for site in sites:
-        files = get_files(
-            CLOUDNET_PATH,
-            f"*{site.lower_case_name}*",
-            (start, end, "%Y%m%d")
-        )
-        if len(files) > 0:
-            data[site] = xr.concat(
-                [load_netcdf_data(f) for f in files],
-                dim="time",
-            )
-    return data
-
-
-def load_dataset_distribution(
-    dataset_type: DatasetType,
-    start: dt.date,
-    end: dt.date,
-    edges: np.ndarray,
-    rois: List[RegionOfInterest] = list(RegionOfInterest),
-) -> Dict[RegionOfInterest, xr.Dataset]:
-    """Load dataset distribution data."""
-    data: Dict[RegionOfInterest, xr.DataArray] = {}
-    for roi in rois:
-        files = get_files(
-            DATASET_PATH[dataset_type],
-            f"*{dataset_type.name}*{roi.value}*",
-            (start, end, "%Y-%m-%d")
-        )
-        if len(files) > 0:
-            dataset = sum([load_netcdf_data(f) for f in files])
-            data[roi] = get_stats(dataset)
-    return data
-
-
-def compare(
-    cloudnet_data: xr.Dataset,
-    cmic_data: xr.DataArray,
-    min_iwp: float = THRESHOLD_IWP,
-) -> Optional[xr.Dataset]:
-    """Match and compare cloudnet and cmic data."""
-    # first interpolate cloudnet data on cmic time using nearest neighbour
-    idxs = []
-    for idx_cmic, t in enumerate(cmic_data.time):
-        time_diff = np.abs(t - cloudnet_data.time) / np.timedelta64(1, "s")
-        idx_cloudnet = np.argmin(time_diff.values)
-        if time_diff[idx_cloudnet] < MAX_TIME_DIFF:
-            idxs.append((idx_cmic, idx_cloudnet))
-    matching_data = xr.Dataset(
-        data_vars={
-            "ice_water_path_cmic": (
-                "time",
-                [cmic_data.values[idx] for idx, _ in idxs],
-            ),
-            "ice_water_path_cloudnet": (
-                "time",
-                [
-                    cloudnet_data["ice_water_path"].values[idx]
-                    for _, idx in idxs
-                ],
-            ),
-        },
-        coords={
-            "time": (
-                "time",
-                [cmic_data.time.values[idx] for idx, _ in idxs]
-            )
-        },
-    )
-    filt = matching_data.ice_water_path_cloudnet >= min_iwp
-    diff = (
-        matching_data.ice_water_path_cmic[filt]
-        - matching_data.ice_water_path_cloudnet[filt]
-    )
-    try:
-        q1, q2, q3 = np.percentile(diff, [25, 50, 75])
-    except IndexError:
-        return None
-    matching_data.attrs = {
-        "median_bias": q2,
-        "interquartile_range": q3 - q1,
-        "mean_absolute_error": np.mean(np.abs(diff)),
-    }
-    return matching_data
 
 
 def show_cloudnet_distribution(
@@ -219,11 +88,11 @@ def validate_by_region(
     start: dt.date,
     end: dt.date,
 ) -> None:
-    """Compare CMIC or ICI to DARDAR IWP distribution."""
-    edges = np.logspace(np.log10(MIN_IWP), np.log10(MAX_IWP), N_BINS)
-    dardar = load_dataset_distribution(DatasetType.DARDAR, start, end, edges)
-    cmic = load_dataset_distribution(dataset, start, end, edges)
-    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
+    """Compare dataset to DARDAR IWP distribution."""
+    dardar = load_dataset_distribution(DatasetType.DARDAR, start, end)
+    other = load_dataset_distribution(dataset, start, end)
+    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(14, 8))
+    summary: Dict[str, Dict[str, float]] = {}
     for idx, (roi, stats) in enumerate(dardar.items()):
         color = COLORS[idx]
         axs[0].loglog(stats.x, stats.pdf, '-', color=color)
@@ -243,24 +112,24 @@ def validate_by_region(
         axs[1].set_ylim([0, 1.01])
         axs[1].set_xlabel("IWP [kg/m2]")
         axs[1].set_ylabel("Distribution [-]")
-        if roi in cmic:
-            print(
-                f'{roi.name}:'
-                f' DARDAR median: {stats.attrs["median"]}'
-                f' {dataset.name} median: {cmic[roi].attrs["median"]}'
-                f' DARDAR iqr: {stats.attrs["interquartile_range"]}'
-                f' {dataset.name} iqr: {cmic[roi].attrs["interquartile_range"]}'
-            )
-            axs[0].loglog(cmic[roi].x, cmic[roi].pdf, '--', color=color)
+        if roi in other:
+            summary[roi.name] = {
+                "DARDAR": stats.attrs,
+                dataset.name: other[roi].attrs,
+            }
+            axs[0].loglog(other[roi].x, other[roi].pdf, '--', color=color)
             axs[1].semilogx(
-                cmic[roi].x,
-                cmic[roi].dist,
+                other[roi].x,
+                other[roi].dist,
                 '--',
                 color=color,
                 label=f"{dataset.name}: {roi.value.replace('_', ' ')}",
             )
     plt.legend()
-    plt.savefig(f"dardar_{dataset.value}_stat.png", bbox_inches='tight')
+    outfile_stem = f"dardar_{dataset.value}_comp"
+    plt.savefig(f"{outfile_stem}.png", bbox_inches='tight')
+    with open(f"{outfile_stem}.json", "w") as outfile:
+        outfile.write(json.dumps(summary, indent=4))
     plt.show()
 
 
@@ -269,26 +138,26 @@ def show_time_series(
     start: dt.date,
     end: dt.date,
 ) -> None:
-    """Show time series of cmic and cloudnet data."""
-    cmic_data = load_dataset(dataset, start, end)
+    """Show time series of cloudnet and other dataset."""
     cloudnet_data = load_cloudnet_data(start, end)
+    other_data = load_dataset(dataset, start, end)
     fig = plt.figure(figsize=(18, 10))
     nrows = 3
     ncols = 5
     idx = 0
     for site in CloudnetSite:
-        if site not in cmic_data or site not in cloudnet_data:
+        if site not in other_data or site not in cloudnet_data:
             continue
         ax = fig.add_subplot(nrows, ncols, idx + 1)
         line_cloudnet = ax.semilogy(
             cloudnet_data[site].time, cloudnet_data[site].ice_water_path,  'C0.'
         )
-        line_cmic = ax.semilogy(
-            cmic_data[site].time, cmic_data[site],  'C1.'
+        line_other = ax.semilogy(
+            other_data[site].time, other_data[site],  'C1.'
         )
         if idx == ncols - 1:
             line_cloudnet[0].set_label("cloudnet")
-            line_cmic[0].set_label(dataset.value)
+            line_other[0].set_label(dataset.value)
             ax.legend()
         if idx % ncols == 0:
             ax.set_ylabel("IWP [kg/m2]")
@@ -310,17 +179,22 @@ def validate_by_site(
     start: dt.date,
     end: dt.date,
 ) -> None:
-    """Compare cmic and cloudnet data."""
-    cmic_data = load_dataset(dataset, start, end)
+    """Compare cloudnet and another dataset."""
     cloudnet_data = load_cloudnet_data(start, end)
-    summary: Dict[CloudnetSite, Dict[str, float]] = {}
+    other_data = load_dataset(dataset, start, end)
+    summary: Dict[str, Dict[str, float]] = {}
     for site in CloudnetSite:
-        if site not in cmic_data or site not in cloudnet_data:
+        if site not in other_data or site not in cloudnet_data:
             continue
-        stats = compare(cloudnet_data[site], cmic_data[site])
+        stats = compare(
+            cloudnet_data[site], other_data[site], THRESHOLD_IWP, MAX_TIME_DIFF,
+        )
         if stats is not None:
-            summary[site] = stats.attrs
-    sites = [s.value for s in summary]
+            summary[site.value] = stats.attrs
+    outfile_stem = f"cloudnet_{dataset.name}_validation"
+    with open(f"{outfile_stem}.json", "w") as outfile:
+        outfile.write(json.dumps(summary, indent=4))
+    sites = [s for s in summary]
     ones = np.ones(len(sites))
     fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(17, 7))
     offset = 0.005
@@ -344,7 +218,7 @@ def validate_by_site(
         else:
             value = ACCURACY[param]["threshold"] + offset
             axs[idx].set_ylim([-value, value])
-    plt.savefig(f"cloudnet_{dataset.name}_validation.png", bbox_inches='tight')
+    plt.savefig(f"{outfile_stem}.png", bbox_inches='tight')
     plt.show()
 
 
