@@ -250,6 +250,7 @@ def get_stats(
             "x": ("x", center)
         },
         attrs={
+            "mean": np.trapz(center * pdf, center),
             "median": y[1],
             "interquartile_range": y[2] - y[0],
         }
