@@ -13,7 +13,7 @@ from pps_mw_validation.utils import load_netcdf_data, get_files, get_stats
 
 CLOUDNET_PATH = Path(os.environ.get("CLOUDNET_RESAMPLED_PATH", os.getcwd()))
 DARDAR_PATH = Path(os.environ.get("DARDAR_STAT_PATH", os.getcwd()))
-CMIC_PATH = Path(os.environ.get("CMIC_PATH", os.getcwd()))
+CMIC_PATH = Path(os.environ.get("CMIC_STAT_PATH", os.getcwd()))
 ICI_PATH = Path(os.environ.get("ICI_STAT_PATH", os.getcwd()))
 DATASET_PATH = {
     DatasetType.CMIC: CMIC_PATH,
@@ -129,7 +129,10 @@ def compare(
             )
         },
     )
-    filt = matching_data.ice_water_path_cloudnet >= min_iwp
+    filt = (
+        (matching_data.ice_water_path_cloudnet >= min_iwp)
+        | (matching_data.ice_water_path_other >= min_iwp)
+    )
     diff = (
         matching_data.ice_water_path_other[filt]
         - matching_data.ice_water_path_cloudnet[filt]
