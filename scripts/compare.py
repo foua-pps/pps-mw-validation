@@ -117,9 +117,8 @@ def validate_by_region(
                 "DARDAR": stats.attrs,
                 dataset.name: other[roi].attrs,
                 # Cramer-von Mises criterion
-                "cvm": np.trapz((
-                    stats.dist - other[roi].dist) ** 2,
-                    stats.dist,
+                "cvm": np.sqrt(
+                    np.trapz((stats.dist - other[roi].dist) ** 2, stats.dist)
                 ),
             }
             axs[0].loglog(other[roi].x, other[roi].pdf, '--', color=color)

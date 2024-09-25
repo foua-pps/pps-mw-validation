@@ -240,7 +240,7 @@ def get_stats(
     count = data.ice_water_path_count.values
     pdf = count / bin_size / np.sum(count)
     dist = np.cumsum(pdf * bin_size)
-    y = np.interp([0.25, 0.5, 0.75], dist, center)
+    quartile = np.interp([0.25, 0.5, 0.75], dist, center)
     return xr.Dataset(
         data_vars={
             "pdf": ("x", pdf),
@@ -251,7 +251,9 @@ def get_stats(
         },
         attrs={
             "mean": np.trapz(center * pdf, center),
-            "median": y[1],
-            "interquartile_range": y[2] - y[0],
+            "quartile1": quartile[0],
+            "quartile2": quartile[1],
+            "quartile3": quartile[2],
+            "interquartile_range": quartile[2] - quartile[0],
         }
     )

@@ -20,7 +20,7 @@ angle of about 51°. Reference data with this type of
 characteristics are not directly available and the
 *pps-mw-validation* package contains tool that can be used
 to "resample" reference data to make the data comparable to
-that of ICI. 
+that of ICI.
 
 The *pps-mw-validation* package is under development, actual
 EPS-SG data are not yet available, and the package currently
@@ -44,17 +44,20 @@ package includes:
 
   * `MWI-ICI L2`_ test data: ice water path data retrieved from
     simulated ICI level1b data.
+  
+  * BALTRAD data: ground based radar network data for the area
+    around the Baltic Sea.
 
 
 Comparison methods
 ..................
 
-Two type of comparison/validation methods are handled:
+Three type of comparison/validation methods are handled:
 
-  * direct comparison to resampled `ACTRIS Cloudnet`_ data
+  * direct comparison of ICI-IWP to resampled `ACTRIS Cloudnet`_ data
 
-  * statistical comparison to resampled DARDAR_ data for a number
-    of predefined region of interests:
+  * statistical comparison of ICI-IWP to resampled DARDAR_ data for a
+    number of predefined region of interests:
     
     * arctic
     * central_antarctica
@@ -62,6 +65,9 @@ Two type of comparison/validation methods are handled:
     * mid_latitude_south
     * southern_ocean
     * tropics
+
+  * direct comparison of *pps-mw* PR-HL product to BALTRAD data
+  
 
 .. _NWCSAF: https://www.nwcsaf.org/
 .. _EPS-SG: https://www.eumetsat.int/metop-sg
@@ -103,12 +109,13 @@ The package contains a test suite can be run by tox_:
 Run package scripts
 -------------------
 
-The package currently contains three scripts:
+The package currently contains four scripts:
 
   * resample: resampling of *ACTRIS Cloudnet* and *DARDAR* data,
   * collect: collect data around *ACTRIS Cloudnet* sites or within
     region of interests
   * compare: compare two datasets to each other
+  * prhl: collect and compare PR-HL and BALTRAD data
 
 that can be used to perform a dataset comparison/validation.
 The usage of these scripts are described later in this section,
@@ -135,6 +142,15 @@ Workflow:
 
 The *resample* and *collect* scripts will save the processed
 data into new data files.
+
+Direct comparison of PR-HL to BALTRAD data 
+..........................................
+
+Workflow:
+
+  1. prhl: *collect* statistics from matching (time) data  
+  2. prhl: *summarize* the collected statistics from above 
+
 
 resample
 ........
@@ -193,3 +209,22 @@ compare
   options:
     -h, --help            show this help message and exit
 
+
+prhl
+....
+
+.. code-block:: console
+
+  prhl --help
+  usage: prhl [-h] [-t {collect,summarize}] -f FILES [FILES ...] [-v {critical,error,warning,info,debug}]
+
+   Compare PR-HL aginst BALTRAD precipitation data.
+
+  options:
+    -h, --help            show this help message and exit
+    -t {collect,summarize}, --type {collect,summarize}
+                          Type of operation.
+    -f FILES [FILES ...], --file FILES [FILES ...]
+                          PR-HL file(s) to process.
+    -v {critical,error,warning,info,debug}, --verbose {critical,error,warning,info,debug}
+                          Provide logging level.

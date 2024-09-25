@@ -36,6 +36,7 @@ setuptools.setup(
             'resample=scripts.resample:cli',
             'collect=scripts.collect:cli',
             'compare=scripts.compare:cli',
+            'prhl=scripts.prhl:cli',
         ],
     }
 )
