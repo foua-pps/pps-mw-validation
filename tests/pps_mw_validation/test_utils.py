@@ -77,7 +77,9 @@ def test_get_cloud_ice_prop(
 
 
 @pytest.mark.parametrize("param,expect", (
-    ("median", 0.5),
+    ("quartile1", 0.2),
+    ("quartile2", 0.5),
+    ("quartile3", 0.8),
     ("interquartile_range", 0.6),
 ))
 def test_get_stats(
