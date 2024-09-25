@@ -17,7 +17,7 @@ from pps_mw_validation.logging import LOG_LEVEL, set_log_level
 
 
 STATS_DIR = os.environ.get("STATS_DIR", ".")
-MIN_RATE_RATE = 0.1  # mm / h
+MIN_RAIN_RATE = 0.1  # mm / h
 
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 def collect_stats(
     prhl_files: list[Path],
+    make_plots: bool,
     stats_dir: Path = Path(STATS_DIR),
 ):
     """Collect and write stats files."""
@@ -36,7 +37,10 @@ def collect_stats(
             logger.warning(
                 f"Failed load BALTRAD data matching {prhl_file.as_posix()}"
             )
-        stats = prhl_validation.get_stats(prhl, baltrad, MIN_RATE_RATE)
+            continue
+        if make_plots:
+            prhl_validation.plot_scene(prhl, baltrad, MIN_RAIN_RATE, stats_dir)
+        stats = prhl_validation.get_stats(prhl, baltrad, MIN_RAIN_RATE)
         if not stats_dir.exists():
             stats_dir.mkdir(parents=True, exist_ok=True)
         outfile = stats_dir / f"{prhl_file.stem}_stats.nc"
@@ -46,6 +50,7 @@ def collect_stats(
 
 def summarize_stats(
     stats_files: list[Path],
+    make_plots: bool,
     stats_dir: Path = Path(STATS_DIR),
 ):
     """Collect stats files and summarise the comparison."""
@@ -55,28 +60,30 @@ def summarize_stats(
     prhl = np.concatenate([r["prhl"] for r in records])
     condition = np.concatenate([r["condition"] for r in records])
 
-    stats = prhl_validation.get_detection_performance(
+    if make_plots:
+        prhl_validation.make_plots(
+            baltrad, prhl, condition, stats_dir
+        )
+
+    detection_stats = prhl_validation.get_detection_performance(
         [r.attrs for r in records]
     )
-
-    for surf_type, value in prhl_validation.SURFACE_TYPE.items():
-        filt = np.bitwise_and(condition, value) == value
-        summary_stats = prhl_validation.get_summary_stats(
-            baltrad[filt],
-            prhl[filt],
-        )
-        stats[surf_type] = stats[surf_type] | summary_stats
-        prhl_validation.make_plots(
-            baltrad[filt],
-            prhl[filt],
-            surf_type,
-            stats_dir,
-        )
+    rain_rate_stats = prhl_validation.get_rain_rate_difference(
+        baltrad, prhl, condition,
+    )
     if not stats_dir.exists():
         stats_dir.mkdir(parents=True, exist_ok=True)
     outfile = stats_dir / "baltrad_comparison_summary.json"
     with open(outfile, "w") as f:
-        f.write(json.dumps(stats, indent=4))
+        f.write(
+            json.dumps(
+                {
+                    "detection_stats": detection_stats,
+                    "rain_rate_stats": rain_rate_stats,
+                },
+                indent=4
+            )
+        )
     logger.info(f"Wrote summary file: {outfile.as_posix()}")
 
 
@@ -104,6 +111,12 @@ def cli(args_list: list[str] = argv[1:]):
         help="PR-HL file(s) to process.",
     )
     parser.add_argument(
+        "-p",
+        "--plot",
+        action="store_true",
+        help="Flag for plotting result",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         dest="log_level",
@@ -117,15 +130,16 @@ def cli(args_list: list[str] = argv[1:]):
 
     log_level = args.log_level
     operation_type = args.operation_type
+    plot = args.plot
     files = [Path(f) for f in args.files]
 
     set_log_level(LOG_LEVEL[log_level])
 
     if operation_type == "collect":
-        collect_stats(files)
+        collect_stats(files, plot)
 
     if operation_type == "summarize":
-        summarize_stats(files)
+        summarize_stats(files, plot)
 
 
 if __name__ == "__main__":

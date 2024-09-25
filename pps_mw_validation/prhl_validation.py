@@ -61,23 +61,37 @@ def get_stats(
     return dataset
 
 
-def get_summary_stats(
+def get_surface_mask(condition: np.ndarray) -> dict[str, np.ndarray]:
+    """Get surface mask."""
+    return {
+        surf_type: np.bitwise_and(condition, value) == value
+        for surf_type, value in SURFACE_TYPE.items()
+    } | {
+         "all_surface": np.ones_like(condition, dtype=bool)
+    }
+
+
+def get_rain_rate_difference(
     baltrad: np.ndarray,
     prhl: np.ndarray,
-) -> dict[str, float]:
-    """Get summary stats."""
+    condition: np.ndarray,
+) -> dict[str, dict[str, float]]:
+    """Get rain rate difference stats."""
+    diff = prhl - baltrad
     clipped = np.clip(baltrad, a_min=CLIP_VALUE_MIN, a_max=CLIP_VALUE_MAX)
     return {
-        "mean_relative_difference_percent": np.mean(
-            100 * np.abs(prhl - baltrad) / clipped
-        ),
-        "std_relative_difference_percent": np.std(
-            100 * (prhl - baltrad) / clipped
-        ),
-        "mean_difference_mm_per_hour": np.mean(prhl - baltrad),
-        "std_difference_mm_per_hour": np.std(prhl - baltrad),
-        "prhl_mean_mm_per_hour": np.mean(prhl),
-        "baltrad_mean_mm_per_hour": np.mean(baltrad),
+        surf_type: {
+            "mean_relative_difference_percent": np.mean(
+                100 * np.abs(diff[m]) / clipped[m]
+            ),
+            "std_relative_difference_percent": np.std(
+                100 * diff[m] / clipped[m]
+            ),
+            "mean_difference_mm_per_hour": np.mean(diff[m]),
+            "std_difference_mm_per_hour": np.std(diff[m]),
+            "prhl_mean_mm_per_hour": np.mean(prhl[m]),
+            "baltrad_mean_mm_per_hour": np.mean(baltrad[m]),
+        } for surf_type, m in get_surface_mask(condition).items()
     }
 
 
@@ -115,15 +129,131 @@ def get_pod_and_pofd(
     return pod, pofd
 
 
+def plot_scene(
+    prhl_data: xr.Dataset,
+    baltrad: np.ndarray,
+    min_rr: float,
+    outpath: Path,
+) -> None:
+    """Plot the scene."""
+    plot_rain_rate(prhl_data, baltrad, outpath)
+    plot_detection(prhl_data["rainfall_rate"].data, baltrad, min_rr, outpath)
+
+
+def plot_detection(
+    prhl: np.ndarray,
+    baltrad: np.ndarray,
+    min_rr: float,
+    outpath: Path,
+) -> None:
+    """Plot the detection performance of PR-HL."""
+    filt_finite = np.isfinite(prhl) & np.isfinite(baltrad)
+    filt_true_positive = (prhl >= min_rr) & (baltrad >= min_rr) & filt_finite
+    filt_false_positive = (prhl >= min_rr) & (baltrad < min_rr) & filt_finite
+    filt_true_negative = (prhl < min_rr) & (baltrad < min_rr) & filt_finite
+    filt_false_negative = (prhl < min_rr) & (baltrad >= min_rr) & filt_finite
+
+    r = np.zeros_like(prhl, dtype=int)
+    r[filt_true_positive] = 1
+    r[filt_true_negative] = 2
+    r[filt_false_positive] = 3
+    r[filt_false_negative] = 4
+
+    clipped = np.clip(baltrad, a_min=CLIP_VALUE_MIN, a_max=CLIP_VALUE_MAX)
+    diff = (prhl - baltrad) / clipped
+
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 8))
+
+    # detection performance subplot
+    n_colors = 5
+    cmap = plt.get_cmap('jet', n_colors)
+    lcmap = [cmap(i) for i in range(cmap.N)]
+    lcmap[0] = (.5, .5, .5, 1.0)
+    cmap = cmap.from_list('custom cmap', lcmap, n_colors)
+
+    im = axes[0].imshow(r, cmap=cmap, vmin=0, vmax=5)
+    axes[0].title.set_text("Detection of rain rate > 0.1 mm / h")
+    cbar_ax = fig.add_axes([0.15, 0.08, 0.32, 0.05])
+    cbar = fig.colorbar(
+        im, cax=cbar_ax, orientation='horizontal', ticks=[1.5, 2.5, 3.5, 4.5]
+    )
+    cbar.ax.set_xticklabels(
+        ['true positive', 'true negative', 'false positive', 'false negative'],
+        rotation=15,
+    )
+    axes[0].set_yticklabels([])
+    axes[0].set_xticklabels([])
+
+    # reltive difference subplot
+    cmap = plt.get_cmap('coolwarm', 17)
+    diff[~filt_true_positive] = 0.0
+    im = axes[1].imshow(100 * diff, cmap=cmap, vmin=-100, vmax=100)
+    axes[1].title.set_text("PR-HL - BALTRAD")
+    axes[1].set_yticklabels([])
+    axes[1].set_xticklabels([])
+
+    fig.subplots_adjust(right=0.95)
+    cbar_ax = fig.add_axes([0.6, 0.08, 0.32, 0.05])
+    cbar = fig.colorbar(im, cax=cbar_ax, orientation='horizontal')
+    cbar.ax.set_xlabel('Relative difference [%]')
+
+    if not outpath.exists():
+        outpath.mkdir(parents=True, exist_ok=True)
+    outfile = outpath / "prhl_baltrad_detection_performance.png"
+    plt.savefig(outfile,  bbox_inches='tight')
+    plt.close()
+    logger.info(f"Wrote image file to disk: {outfile.as_posix()}")
+
+
+def plot_rain_rate(
+    prhl_data: xr.Dataset,
+    baltrad: np.ndarray,
+    outpath: Path,
+) -> None:
+    """Plot the retrieved rain rate."""
+    fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(12, 8))
+    n_colors = 64
+    cmap = plt.get_cmap('jet', n_colors)
+    lcmap = [cmap(i) for i in range(cmap.N)]
+    lcmap[0] = (.5, .5, .5, 1.0)  # make first color gray
+    cmap = cmap.from_list('custom cmap', lcmap, n_colors)
+    vmin = 0
+    vmax = np.ceil(np.nanmax(prhl_data["rainfall_rate"].values))
+    for idx, (data, title) in enumerate(
+        [
+            (prhl_data["rainfall_rate"], "PR-HL"),
+            (prhl_data["rainfall_rate_uncertainty"], "PR-HL uncertainty"),
+            (baltrad, "BALTRAD"),
+        ]
+    ):
+        im = axes[idx].imshow(data, cmap=cmap, vmin=vmin, vmax=vmax)
+        axes[idx].title.set_text(title)
+        axes[idx].set_yticklabels([])
+        axes[idx].set_xticklabels([])
+
+    fig.subplots_adjust(right=0.95)
+    cbar_ax = fig.add_axes([0.35, 0.2, 0.38, 0.03])
+    cbar = fig.colorbar(im, cax=cbar_ax, orientation='horizontal')
+    cbar.ax.set_xlabel('Precipitation rate [mm / h]')
+
+    if not outpath.exists():
+        outpath.mkdir(parents=True, exist_ok=True)
+    outfile = outpath / "prhl_baltrad_retrieved_rain_rate.png"
+    plt.savefig(outfile,  bbox_inches='tight')
+    plt.close()
+    logger.info(f"Wrote image file to disk: {outfile.as_posix()}")
+
+
 def make_plots(
     baltrad: np.ndarray,
     prhl: np.ndarray,
-    tag: str,
+    condition: np.ndarray,
     outpath: Path,
 ) -> None:
-    """Make relative difference plots."""
-    make_heatmap(baltrad, prhl, tag, outpath)
-    make_relative_difference_plot(baltrad, prhl, tag, outpath)
+    """Make plots."""
+    for surf_type, m in get_surface_mask(condition).items():
+        make_heatmap(baltrad[m], prhl[m], surf_type, outpath)
+        make_relative_difference_plot(baltrad[m], prhl[m], surf_type, outpath)
 
 
 def make_relative_difference_plot(
@@ -176,7 +306,7 @@ def make_relative_difference_plot(
             plt.xlabel(xlabel)
             plt.ylim([-200, 200])
             plt.xlim([min_rr, max_rr])
-        outfile = outpath / f"phrl_baltrad_relative_diff_{tag}.png"
+        outfile = outpath / f"prhl_baltrad_relative_diff_{tag}_{plot}.png"
         plt.savefig(outfile, bbox_inches='tight')
         plt.close()
         logger.info(f"Wrote image file to disk: {outfile.as_posix()}")

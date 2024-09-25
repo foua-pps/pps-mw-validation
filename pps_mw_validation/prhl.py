@@ -47,6 +47,10 @@ class PrHL:
                     ["y", "x"],
                     data["rainfall_rate"].values[y][:, x],
                 ),
+                "rainfall_rate_uncertainty": (
+                    ["y", "x"],
+                    data["rainfall_rate_uncertainty"].values[y][:, x],
+                ),
                 "condition": (
                     ["y", "x"],
                     data["condition"].values[y][:, x].astype(int),
