@@ -199,13 +199,13 @@ def get_cloud_ice_prop(
     distance = np.abs(data.distance.values - target_distance)
     filt = distance <= footprint_size / 2
     n = np.count_nonzero(filt)
-    ice_water_paths = np.trapz(data.iwc[filt], data.height)
-    ice_mass_heights = np.trapz(
+    ice_water_paths = np.trapezoid(data.iwc[filt], data.height)
+    ice_mass_heights = np.trapezoid(
         data.iwc[filt] * np.tile(data.height, (n, 1)),
         data.height,
     ) / np.where(ice_water_paths > 0, ice_water_paths, 1.)
     if "dm" in data:
-        ice_mass_sizes = np.trapz(
+        ice_mass_sizes = np.trapezoid(
             data.iwc[filt] * data.dm[filt],
             data.height,
         ) / np.where(ice_water_paths > 0, ice_water_paths, 1.)
@@ -250,7 +250,7 @@ def get_stats(
             "x": ("x", center)
         },
         attrs={
-            "mean": np.trapz(center * pdf, center),
+            "mean": np.trapezoid(center * pdf, center),
             "quartile1": quartile[0],
             "quartile2": quartile[1],
             "quartile3": quartile[2],

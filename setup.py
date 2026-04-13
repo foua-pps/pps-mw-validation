@@ -28,7 +28,7 @@ setuptools.setup(
     long_description=long_description,
     license='GPL',
     packages=setuptools.find_packages(),
-    python_requires='>=3.9, <4',
+    python_requires='>=3.12, <4',
     install_requires=required,
     include_package_data=True,
     entry_points={

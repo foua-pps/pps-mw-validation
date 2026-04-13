@@ -1,4 +1,8 @@
+cartopy
+dask
+h5py
 matplotlib
 netcdf4
 numpy
+pyresample
 xarray
