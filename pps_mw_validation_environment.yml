@@ -1,13 +1,14 @@
 name: pps-mw-validation
 channels:
   - conda-forge
-  - defaults
-  - nsidc
 
 dependencies:
-  - python=3.10
+  - python=3.12
   - cartopy
+  - dask
+  - h5py
   - matplotlib
   - netcdf4
   - numpy
+  - pyresample
   - xarray

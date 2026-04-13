@@ -52,7 +52,7 @@ def add_parser(
     start: dt.date,
     end: dt.date,
     outdir: Path,
-    datasets: List[DatasetType] = [d for d in DATASET_LOADER],
+    datasets: List[DatasetType] = [d for d in DATASET_LOADER],  # type: ignore
     location: Optional[CloudnetSite] = None,
     max_distance: Optional[float] = None,
     roi: Optional[RegionOfInterest] = None,
