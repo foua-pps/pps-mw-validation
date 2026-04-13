@@ -6,12 +6,12 @@ from pyresample.geometry import AreaDefinition, SwathDefinition  # type: ignore
 from pyresample.kd_tree import resample_nearest  # type: ignore
 
 
-def load_prx_dataset(
+def resample(
     prx_file: Path,
     area: AreaDefinition,
     radius_of_influence: float,
 ) -> xr.Dataset:
-    """Load and resample PR-HL or PR-S file."""
+    """Load and resample PR-HL or PR-S file to given area."""
     dataset = xr.load_dataset(prx_file)
     resampled = resample_nearest(
         SwathDefinition(dataset["longitude"].values, dataset["latitude"].values),

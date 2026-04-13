@@ -13,7 +13,7 @@ from pps_mw_validation.logging import LOG_LEVEL, set_log_level
 
 
 BALTRAD_CONFIG_FILE = os.environ.get("BALTRAD_CONFIG_FILE", "baltrad.yaml")
-STATS_DIR = os.environ.get("PPSMW_STATS_DIR", ".")
+PPSMW_STATS_DIR = os.environ.get("PPSMW_STATS_DIR", ".")
 
 
 logger = logging.getLogger(__name__)
@@ -25,14 +25,14 @@ def collect_stats(
     make_plots: bool,
     stats_dir: Path,
 ):
-    """Collect and write stats files."""
+    """Compare PR-HL or PR-S files against BALTRAD and write stats to file."""
 
     stats = prhl_validation.Stats.zeros(resampler.area.shape)
 
     for prx_file in prx_files:
 
         try:
-            prx_dataset = prhl.load_prx_dataset(
+            prx_dataset = prhl.resample(
                 prx_file, resampler.area, resampler.radius_of_influence
             )
         except Exception:
@@ -40,7 +40,7 @@ def collect_stats(
             continue
 
         try:
-            baltrad_file = baltrad.get_matching_file(prx_dataset["central_time"])
+            baltrad_file = resampler.get_matching_file(prx_dataset["central_time"])
             baltrad_dataset = resampler.resample(baltrad_file)
             assert baltrad_dataset is not None
         except Exception:
@@ -69,7 +69,7 @@ def summarize_stats(
     area: AreaDefinition,
     stats_dir: Path,
 ):
-    """Collect stats files and summarise the comparison."""
+    """Summarize the comparison(s) and write the overall metrics to a json file."""
 
     data = {}
     for stat_file in stats_files:
@@ -86,9 +86,9 @@ def summarize_stats(
 
 
 def cli(args_list: list[str] = argv[1:]):
-    """Compare PRHL aginst BALTRAD precipitation data."""
+    """Run the command line interface for the PR-HL validation pipeline."""
     parser = argparse.ArgumentParser(
-        description="Compare PRHL aginst BALTRAD precipitation.",
+        description="Compare PR-HL or PR-S level2 data aginst BALTRAD precipitation.",
     )
     parser.add_argument(
         "-t",
@@ -96,7 +96,7 @@ def cli(args_list: list[str] = argv[1:]):
         dest="operation_type",
         default="collect",
         type=str,
-        help="Type of operation.",
+        help="type of operation",
         choices=["collect", "summarize"],
     )
     parser.add_argument(
@@ -106,14 +106,14 @@ def cli(args_list: list[str] = argv[1:]):
         type=str,
         nargs="+",
         required=True,
-        help="PR-HL file(s) to process.",
+        help="level2 file(s) to process",
     )
 
     parser.add_argument(
         "-p",
         "--plot",
         action="store_true",
-        help="Flag for plotting result",
+        help="flag for plotting result",
     )
     parser.add_argument(
         "-v",
@@ -121,8 +121,24 @@ def cli(args_list: list[str] = argv[1:]):
         dest="log_level",
         default="warning",
         type=str,
-        help="Provide logging level.",
+        help="provide logging level",
         choices=[level for level in LOG_LEVEL],
+    )
+    parser.add_argument(
+        "-c",
+        "--config",
+        dest="baltrad_config_file",
+        default=BALTRAD_CONFIG_FILE,
+        type=str,
+        help="BALTRAD resamplig config file",
+    )
+    parser.add_argument(
+        "-o",
+        "--outpath",
+        dest="stats_dir",
+        default=PPSMW_STATS_DIR,
+        type=str,
+        help="Directory where to write stats files.",
     )
 
     args = parser.parse_args(args_list)
@@ -130,13 +146,13 @@ def cli(args_list: list[str] = argv[1:]):
     log_level = args.log_level
     operation_type = args.operation_type
     plot = args.plot
+    baltrad_config_file = Path(args.baltrad_config_file)
+    stats_dir = Path(args.stats_dir)
     files = [Path(f) for f in args.files]
 
     set_log_level(LOG_LEVEL[log_level])
 
-    config = baltrad.load_config(Path(BALTRAD_CONFIG_FILE))
-    resampler = baltrad.BaltradResampler.from_config(config)
-    stats_dir = Path(STATS_DIR)
+    resampler = baltrad.BaltradResampler.from_config_file(baltrad_config_file)
 
     if operation_type == "collect":
         collect_stats(files, resampler, plot, stats_dir)

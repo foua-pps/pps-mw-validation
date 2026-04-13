@@ -17,7 +17,6 @@ from pyresample.kd_tree import resample_gauss  # type: ignore
 from pyresample.utils import fwhm2sigma  # type: ignore
 
 
-BALTRAD_FILE_FMT = "/data/lang/radar/baltrad/%Y/%m/%d/%H/%M/comp_pcappi_blt2km_pn150_%Y%m%dT%H%M00Z_0x40000000001.h5"  # noqa: E501
 DATASET = {
     "reflectivity": "dataset1/data3",
     "distance": "dataset1/data3/quality3",
@@ -174,6 +173,18 @@ class BaltradResampler:
     blacklist: Optional[list[str]] = None
 
     @classmethod
+    def from_config_file(cls, config_file: Path) -> "BaltradResampler":
+        """Get resampler from config file."""
+        try:
+            with open(config_file, mode="rt", encoding="utf-8") as fgr:
+                config = yaml.safe_load(fgr)
+        except Exception:
+            raise ValueError(
+                f"Failed loading config file: {config_file.as_posix()}"
+            )
+        return cls.from_config(config)
+
+    @classmethod
     def from_config(cls, config: dict[str, Any]) -> "BaltradResampler":
         """Get resampler from config dict."""
         try:
@@ -298,24 +309,10 @@ class BaltradResampler:
         dataset = self._resample(dataset["reflectivity"], quality)
         return dataset
 
-
-def get_matching_file(t0: dt.datetime) -> Path:
-    """Get the nearest in time BALTRAD file."""
-    nearest_quarter = (
-        dt.datetime(t0.year, t0.month, t0.day, t0.hour)
-        + dt.timedelta(minutes=np.round(t0.minute / 15) * 15)
-    )
-    return Path(nearest_quarter.strftime(BALTRAD_FILE_FMT))
-
-
-def load_config(
-    config_path: Path,
-) -> dict[str, Any]:
-    """Load config file."""
-    try:
-        with open(config_path, mode="rt", encoding="utf-8") as fgr:
-            return yaml.safe_load(fgr)
-    except Exception:
-        raise ValueError(
-            f"Failed loading config file: {config_path.as_posix()}"
+    def get_matching_file(self, t0: dt.datetime) -> Path:
+        """Get the nearest in time BALTRAD file."""
+        nearest_quarter = (
+            dt.datetime(t0.year, t0.month, t0.day, t0.hour)
+            + dt.timedelta(minutes=np.round(t0.minute / 15) * 15)
         )
+        return Path(nearest_quarter.strftime(self.baltradfile_format))
