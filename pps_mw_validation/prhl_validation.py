@@ -112,18 +112,22 @@ class Stats:
         baltrad_square_mean = self.sum_square_baltrad / self.count_rain
         baltrad_std = np.sqrt(baltrad_square_mean - baltrad_mean ** 2)
 
+        pod = self.true_detection / self.count_rain
+        pofd = self.false_detection / self.count_clear
         covariance = self.sum_product / self.count_rain - prx_mean * baltrad_mean
+        rmse = np.sqrt(self.sum_diff_square / self.count_rain)
 
         return {
             "bias": prx_mean - baltrad_mean,
-            "fse": np.sqrt(self.sum_diff_square / self.count_rain) / baltrad_mean,
-            "pod": self.true_detection / self.count_rain,
-            "pofd": self.false_detection / self.count_clear,
+            "fse": rmse / baltrad_mean,
+            "pod": pod,
+            "pofd": pofd,
             "corr":  covariance / (prx_std * baltrad_std)
         }
 
     @property
-    def pretty_metrics(self) -> dict[str, dict[float, tuple[float, float]]]:
+    def validation_score(self) -> dict[str, dict[float, tuple[float, float]]]:
+        """Get the validation score in a json friendly format."""
         return {
             metric: {
                 threshold: (_mean, _std) for threshold, _mean, _std in zip(
@@ -180,44 +184,42 @@ class Stats:
                 self.false_detection[idx]
             )
 
+    def plot_stats(
+        self,
+        area: AreaDefinition,
+        stats_dir: Path,
+    ) -> None:
+        """Plot statistics."""
 
-def plot_stats(
-    product: str,
-    metrics: dict[str, np.ndarray],
-    area: AreaDefinition,
-    stats_dir: Path,
-) -> None:
-    """Plot statistics."""
+        crs = area.to_cartopy_crs()
 
-    crs = area.to_cartopy_crs()
-
-    for metric, values in metrics.items():
-        fig = plt.figure()
-        ax = fig.add_subplot(1, 1, 1, projection=crs)
-        ax.gridlines(draw_labels=False, x_inline=False, y_inline=False)
-        c = ax.imshow(
-            values[1],
-            transform=crs,
-            extent=crs.bounds,
-            cmap="viridis",
-            norm=NORM[metric]
-        )
-        ax.add_feature(cartopy.feature.COASTLINE)
-        gl = ax.gridlines(
-            crs=cartopy.crs.PlateCarree(),
-            draw_labels=True,
-            x_inline=False,
-            y_inline=False
-        )
-        gl.right_labels = False
-        gl.top_labels = False
-        gl.left_labels = True
-        gl.bottom_labels = True
-        fig.colorbar(c)
-        fig.tight_layout()
-        outfile = stats_dir / f"{product}_{metric}.png"
-        plt.savefig(outfile)
-        plt.close()
+        for metric, values in self.metrics.items():
+            fig = plt.figure()
+            ax = fig.add_subplot(1, 1, 1, projection=crs)
+            ax.gridlines(draw_labels=False, x_inline=False, y_inline=False)
+            c = ax.imshow(
+                values[1],
+                transform=crs,
+                extent=crs.bounds,
+                cmap="viridis",
+                norm=NORM[metric]
+            )
+            ax.add_feature(cartopy.feature.COASTLINE)
+            gl = ax.gridlines(
+                crs=cartopy.crs.PlateCarree(),
+                draw_labels=True,
+                x_inline=False,
+                y_inline=False
+            )
+            gl.right_labels = False
+            gl.top_labels = False
+            gl.left_labels = True
+            gl.bottom_labels = True
+            fig.colorbar(c)
+            fig.tight_layout()
+            outfile = stats_dir / f"{self.product_tag}_{metric}.png"
+            plt.savefig(outfile)
+            plt.close()
 
 
 def plot_scene(

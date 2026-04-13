@@ -69,18 +69,18 @@ def summarize_stats(
     area: AreaDefinition,
     stats_dir: Path,
 ):
-    """Summarize the comparison(s) and write the overall metrics to a json file."""
+    """Summarize the comparison(s) and write the validation score to a json file."""
 
-    data = {}
-    for stat_file in stats_files:
-        stats = prhl_validation.Stats.from_file(stat_file)
-        data[stats.product_tag] = stats.pretty_metrics
+    validation_score = {}
+    for stats_file in stats_files:
+        stats = prhl_validation.Stats.from_file(stats_file)
+        validation_score[stats.product_tag] = stats.validation_score
         if make_plots:
-            prhl_validation.plot_stats(stats.product_tag, stats.metrics, area, stats_dir)
+            stats.plot_stats(area, stats_dir)
 
     outfile = stats_dir / "baltrad_comparison_summary.json"
     with open(outfile, "w") as f:
-        f.write(json.dumps(data, indent=4))
+        f.write(json.dumps(validation_score, indent=4))
 
     logger.info(f"Wrote summary stats file: {outfile.as_posix()}.")
 
