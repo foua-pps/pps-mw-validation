@@ -40,7 +40,7 @@ def collect_stats(
             continue
 
         try:
-            baltrad_file = resampler.get_matching_file(prx_dataset["central_time"])
+            baltrad_file = resampler.get_matching_file(prx_dataset.attrs["central_time"])
             baltrad_dataset = resampler.resample(baltrad_file)
             assert baltrad_dataset is not None
         except Exception:

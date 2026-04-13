@@ -62,11 +62,11 @@ class Stats:
     @classmethod
     def from_file(
         cls,
-        stat_file: Path,
+        stats_file: Path,
     ) -> "Stats":
         """Load stats from file."""
-        _, product, sensor, _ = stat_file.name.lower().split("_")
-        data = xr.load_dataset(stat_file)
+        product_tag, _ = stats_file.name.lower().split("_")
+        data = xr.load_dataset(stats_file)
         return cls(
             thresholds=THRESHOLDS,
             count_rain=data["count_rain"].values,
@@ -79,7 +79,7 @@ class Stats:
             sum_product=data["sum_product"].values,
             true_detection=data["true_detection"].values,
             false_detection=data["false_detection"].values,
-            product_tag=f"{product}-{sensor}",
+            product_tag=product_tag,
         )
 
     @property
@@ -170,7 +170,8 @@ class Stats:
                 self.sum_product[idx],
             )
             self.sum_diff_square[idx] = np.where(
-                filt_rain, self.sum_diff_square[idx] + (rr_baltrad - rr_prx) ** 2,
+                filt_rain,
+                self.sum_diff_square[idx] + (rr_baltrad - rr_prx) ** 2,
                 self.sum_diff_square[idx]
             )
             self.true_detection[idx] = np.where(
