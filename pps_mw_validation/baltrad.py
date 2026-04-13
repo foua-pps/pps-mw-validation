@@ -299,7 +299,8 @@ class BaltradResampler:
         return dataset
 
 
-def get_matching_baltrad_file(t0: dt.datetime) -> Path:
+def get_matching_file(t0: dt.datetime) -> Path:
+    """Get the nearest in time BALTRAD file."""
     nearest_quarter = (
         dt.datetime(t0.year, t0.month, t0.day, t0.hour)
         + dt.timedelta(minutes=np.round(t0.minute / 15) * 15)
