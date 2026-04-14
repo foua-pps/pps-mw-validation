@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+import json
 
 import cartopy  # type: ignore
 import numpy as np  # type: ignore
@@ -102,6 +104,14 @@ class Stats:
         std = np.nanstd(values, axis=(1, 2))
         return np.stack((mean, std), axis=1).tolist()
 
+    @staticmethod
+    def to_json(validation_score: dict[str, Any], outdir: Path) -> Path:
+        """Write validation score to JSON file."""
+        outfile = outdir / "baltrad_comparison_summary.json"
+        with open(outfile, "w") as f:
+            f.write(json.dumps(validation_score, indent=4))
+        return outfile
+
     @classmethod
     def zeros(
         cls,
@@ -165,6 +175,17 @@ class Stats:
             },
             coords={"thresholds": ("t", self.thresholds)},
         )
+
+    def to_netcdf(
+        self,
+        outdir: Path,
+        product_tag: str,
+    ) -> Path:
+        """Write stats to netcdf file."""
+        outdir.mkdir(parents=True, exist_ok=True)
+        outfile = outdir / f"{product_tag}_stats.nc"
+        self.as_dataset.to_netcdf(outfile)
+        return outfile
 
     @staticmethod
     def get_tag(prx_file: Path):
