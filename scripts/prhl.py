@@ -49,7 +49,7 @@ def collect_stats(
 
         rr_prx = prx_dataset["rainfall_rate"].values
         rr_baltrad = baltrad_dataset["rainfall_rate"].values
-        stats.add(rr_prx, rr_baltrad)
+        stats.add_record(rr_prx, rr_baltrad)
 
         if make_plots:
             outfile = stats_dir / f"{prx_file.name}.png"
