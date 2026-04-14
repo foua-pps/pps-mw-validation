@@ -37,6 +37,71 @@ class Stats:
     false_detection: np.ndarray
     product_tag: str
 
+    @property
+    def prx_mean(self) -> np.ndarray:
+        """Get PRX mean precipitation rate."""
+        return self.sum_prx / self.count_rain
+
+    @property
+    def prx_mean_square(self) -> np.ndarray:
+        """Get PRX mean square precipitation rate."""
+        return self.sum_square_prx / self.count_rain
+
+    @property
+    def baltrad_mean(self) -> np.ndarray:
+        """Get BALTRAD mean precipitation rate."""
+        return self.sum_baltrad / self.count_rain
+
+    @property
+    def baltrad_mean_square(self) -> np.ndarray:
+        """Get BALTRAD mean square precipitation rate."""
+        return self.sum_square_baltrad / self.count_rain
+
+    @property
+    def product_mean(self) -> np.ndarray:
+        """Get BALTRAD and PRX product mean values."""
+        return self.sum_product / self.count_rain
+
+    @property
+    def rmse(self) -> np.ndarray:
+        """Get RMSE values."""
+        return np.sqrt(self.sum_diff_square / self.count_rain)
+
+    @property
+    def correlation(self) -> np.ndarray:
+        """Get correlation values."""
+        prx_std = np.sqrt(self.prx_mean_square - self.prx_mean ** 2)
+        baltrad_std = np.sqrt(self.baltrad_mean_square - self.baltrad_mean ** 2)
+        covariance = self.product_mean - self.prx_mean * self.baltrad_mean
+        return covariance / (prx_std * baltrad_std)
+
+    @property
+    def metrics(self) -> dict[str, np.ndarray]:
+        """Get the main metrics."""
+        return {
+            "bias": self.prx_mean - self.baltrad_mean,
+            "fse": self.rmse / self.baltrad_mean,
+            "pod": self.true_detection / self.count_rain,
+            "pofd": self.false_detection / self.count_clear,
+            "corr":  self.correlation,
+        }
+
+    @property
+    def validation_score(self) -> dict[str, dict[float, tuple[float, float]]]:
+        """Get the overall validation score in a json friendly format."""
+        return {
+            metric: {
+                t: stats for t, stats in zip(self.thresholds, self.get_stats(metric))
+            } for metric in self.metrics
+        }
+
+    def get_stats(self, metric: "str") -> list[tuple[float, float]]:
+        """Get mean and std of given metric."""
+        values = np.where(np.isfinite(self.metrics[metric]), self.metrics[metric], np.nan)
+        mean = np.nanmean(values, axis=(1, 2))
+        std = np.nanstd(values, axis=(1, 2))
+        return np.stack((mean, std), axis=1).tolist()
+
     @classmethod
     def zeros(
         cls,
@@ -101,89 +166,51 @@ class Stats:
             coords={"thresholds": ("t", self.thresholds)},
         )
 
-    @property
-    def metrics(self) -> dict[str, np.ndarray]:
-        """Get the main metrics."""
-        prx_mean = self.sum_prx / self.count_rain
-        prx_square_mean = self.sum_square_prx / self.count_rain
-        prx_std = np.sqrt(prx_square_mean - prx_mean ** 2)
-
-        baltrad_mean = self.sum_baltrad / self.count_rain
-        baltrad_square_mean = self.sum_square_baltrad / self.count_rain
-        baltrad_std = np.sqrt(baltrad_square_mean - baltrad_mean ** 2)
-
-        pod = self.true_detection / self.count_rain
-        pofd = self.false_detection / self.count_clear
-        covariance = self.sum_product / self.count_rain - prx_mean * baltrad_mean
-        rmse = np.sqrt(self.sum_diff_square / self.count_rain)
-
-        return {
-            "bias": prx_mean - baltrad_mean,
-            "fse": rmse / baltrad_mean,
-            "pod": pod,
-            "pofd": pofd,
-            "corr":  covariance / (prx_std * baltrad_std)
-        }
-
-    @property
-    def validation_score(self) -> dict[str, dict[float, tuple[float, float]]]:
-        """Get the validation score in a json friendly format."""
-        return {
-            metric: {
-                threshold: (_mean, _std) for threshold, _mean, _std in zip(
-                    self.thresholds,
-                    np.nanmean(np.where(np.isfinite(values), values, np.nan), axis=(1, 2)),
-                    np.nanstd(np.where(np.isfinite(values), values, np.nan), axis=(1, 2)),
-                )
-            } for metric, values in self.metrics.items()
-        }
-
     @staticmethod
     def get_tag(prx_file: Path):
         """Get tag from given filename."""
         _, _, product, sensor, _, _ = prx_file.name.lower().split("_")
         return f"{product}-{sensor}"
 
-    def add(
+    def update(
+        self,
+        attr: str,
+        idx: int,
+        filt: np.ndarray,
+        new: int | float | np.ndarray,
+    ) -> None:
+        """Update attribute."""
+        data = getattr(self, attr)
+        data[idx] = np.where(filt, data[idx] + new, data[idx])
+
+    def add_record(
         self,
         rr_prx: np.ndarray,
-        rr_baltrad: np.ndarray
+        rr_baltrad: np.ndarray,
     ) -> None:
         """Add given rainfall rate record to the stats."""
         for idx, threshold in enumerate(self.thresholds):
 
-            filt_rain = (rr_baltrad >= threshold) & np.isfinite(rr_prx)
-            filt_clear = (rr_baltrad < threshold) & np.isfinite(rr_prx)
+            baltrad_above_threshold = rr_baltrad >= threshold
+            baltrad_below_threshold = rr_baltrad < threshold
+            prx_above_threshold = rr_prx >= threshold
+            prx_is_finite = np.isfinite(rr_prx)
 
-            for filt, data in [(filt_rain, self.count_rain), (filt_clear, self.count_clear)]:
-                data[idx] = np.where(filt, data[idx] + 1, data[idx])
+            filt_rain = baltrad_above_threshold & prx_is_finite
+            filt_clear = baltrad_below_threshold & prx_is_finite
+            filt_true_detection = baltrad_above_threshold & prx_above_threshold
+            filt_false_detection = baltrad_below_threshold & prx_above_threshold
 
-            for data, rr in [(self.sum_baltrad, rr_baltrad), (self.sum_prx, rr_prx)]:
-                data[idx] = np.where(filt_rain, data[idx] + rr, data[idx])
-
-            for data, rr in [(self.sum_square_baltrad, rr_baltrad), (self.sum_square_prx, rr_prx)]:
-                data[idx] = np.where(filt_rain, data[idx] + rr ** 2, data[idx])
-
-            self.sum_product[idx] = np.where(
-                filt_rain,
-                self.sum_product[idx] + rr_prx * rr_baltrad,
-                self.sum_product[idx],
-            )
-            self.sum_diff_square[idx] = np.where(
-                filt_rain,
-                self.sum_diff_square[idx] + (rr_baltrad - rr_prx) ** 2,
-                self.sum_diff_square[idx]
-            )
-            self.true_detection[idx] = np.where(
-                (rr_baltrad >= threshold) & (rr_prx >= threshold),
-                self.true_detection[idx] + 1,
-                self.true_detection[idx]
-            )
-            self.false_detection[idx] = np.where(
-                (rr_baltrad < threshold) & (rr_prx >= threshold),
-                self.false_detection[idx] + 1,
-                self.false_detection[idx]
-            )
+            self.update("count_rain", idx, filt_rain, 1)
+            self.update("count_clear", idx, filt_clear, 1)
+            self.update("sum_baltrad", idx, filt_rain, rr_baltrad)
+            self.update("sum_prx", idx, filt_rain, rr_prx)
+            self.update("sum_square_baltrad", idx, filt_rain, rr_baltrad ** 2)
+            self.update("sum_square_prx", idx, filt_rain, rr_prx ** 2)
+            self.update("sum_product", idx, filt_rain, rr_prx * rr_baltrad)
+            self.update("sum_diff_square", idx, filt_rain, (rr_baltrad - rr_prx) ** 2)
+            self.update("true_detection", idx, filt_true_detection, 1)
+            self.update("false_detection", idx, filt_false_detection, 1)
 
     def plot_stats(
         self,
