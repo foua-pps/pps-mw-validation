@@ -2,7 +2,6 @@
 from pathlib import Path
 from sys import argv
 import argparse
-import json
 import logging
 import os
 
@@ -57,9 +56,8 @@ def collect_stats(
 
         logger.info(f"Processed file: {prx_file.as_posix()}.")
 
-    stats_dir.mkdir(parents=True, exist_ok=True)
-    outfile = stats_dir / f"{stats.get_tag(prx_files[0])}_stats.nc"
-    stats.as_dataset.to_netcdf(outfile)
+    product_tag = stats.get_tag(prx_files[0])
+    outfile = stats.to_netcdf(stats_dir, product_tag)
     logger.info(f"Wrote stats to file: {outfile.as_posix()}")
 
 
@@ -78,10 +76,7 @@ def summarize_stats(
         if make_plots:
             stats.plot_stats(area, stats_dir)
 
-    outfile = stats_dir / "baltrad_comparison_summary.json"
-    with open(outfile, "w") as f:
-        f.write(json.dumps(validation_score, indent=4))
-
+    outfile = stats.to_json(validation_score, stats_dir)
     logger.info(f"Wrote summary stats file: {outfile.as_posix()}.")
 
 
